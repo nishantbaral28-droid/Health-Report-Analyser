@@ -112,13 +112,6 @@ export default function DashboardPage() {
   const notableBiomarkers = insights.biomarkers.filter(b => b.riskLevel !== 'normal');
   const normalBiomarkers = insights.biomarkers.filter(b => b.riskLevel === 'normal');
 
-  const groupPriority: Record<string, Biomarker[]> = {};
-  notableBiomarkers.forEach(b => {
-    const cat = b.category || 'other';
-    if (!groupPriority[cat]) groupPriority[cat] = [];
-    groupPriority[cat].push(b);
-  });
-
   const groupNormal: Record<string, Biomarker[]> = {};
   normalBiomarkers.forEach(b => {
     const cat = b.category || 'other';
@@ -139,19 +132,12 @@ export default function DashboardPage() {
   const hasLipid = [cholesterol, hdl, ldl, triglycerides].some((value) => value !== null && value !== undefined);
   const hasSugar = [glucose, hba1cValue].some((value) => value !== null && value !== undefined);
   const rankedMarkerPool = [...(notableBiomarkers.length > 0 ? notableBiomarkers : insights.biomarkers)].sort(sortBiomarkersByPriority);
-  const signalChartMarkers = rankedMarkerPool.slice(0, 5);
+  const attentionMarkers = [...notableBiomarkers].sort(sortBiomarkersByPriority);
+  const featuredMarker = rankedMarkerPool[0] ?? null;
   const rangeChartCandidates = [...rankedMarkerPool, ...insights.biomarkers]
     .filter(hasNumericRange)
     .sort(sortBiomarkersByPriority);
-  const rangeChartMarkers: Array<Biomarker & { numericValue: number; normalRange: { min: number; max: number } }> = [];
-  const seenRangeMarkers = new Set<string>();
-
-  rangeChartCandidates.forEach((marker) => {
-    if (!seenRangeMarkers.has(marker.name) && rangeChartMarkers.length < 4) {
-      seenRangeMarkers.add(marker.name);
-      rangeChartMarkers.push(marker);
-    }
-  });
+  const featuredRangeMarker = rangeChartCandidates[0] ?? null;
 
   return (
     <div className="min-h-screen bg-[var(--bg-base)]">
@@ -247,26 +233,26 @@ export default function DashboardPage() {
             <div className="mb-5">
               <div className="mb-2 flex items-center gap-2">
                 <Activity className="h-4 w-4 text-[var(--accent-red)]" />
-                <h2 className="text-xs font-black uppercase tracking-widest text-white">Top Marker Signals</h2>
+                <h2 className="text-xs font-black uppercase tracking-widest text-white">Featured Marker Pulse</h2>
               </div>
               <p className="text-xs text-[var(--text-muted)]">
-                A quick visual of the markers standing out most in this uploaded report.
+                A compact view of the single marker that stands out the most in this report.
               </p>
             </div>
-            <TopMarkerSignalsChart markers={signalChartMarkers} />
+            <FeaturedMarkerPulse marker={featuredMarker} />
           </div>
 
           <div className="surface-card p-6">
             <div className="mb-5">
               <div className="mb-2 flex items-center gap-2">
                 <TrendingUp className="h-4 w-4 text-[var(--accent-purple)]" />
-                <h2 className="text-xs font-black uppercase tracking-widest text-white">Reference Range View</h2>
+                <h2 className="text-xs font-black uppercase tracking-widest text-white">Featured Marker Range</h2>
               </div>
               <p className="text-xs text-[var(--text-muted)]">
-                See where the strongest numeric markers land relative to their expected range.
+                See where the strongest numeric marker sits relative to its expected range.
               </p>
             </div>
-            <ReferenceRangeSnapshot markers={rangeChartMarkers} />
+            <FeaturedMarkerRange marker={featuredRangeMarker} />
           </div>
         </div>
 
@@ -296,34 +282,40 @@ export default function DashboardPage() {
                 <span className="text-xs font-medium text-[var(--text-muted)] ml-2 bg-white/5 px-2 py-0.5 rounded-full">{notableBiomarkers.length} indicators</span>
               </div>
 
-              {Object.entries(groupPriority).map(([category, biomarkers]) => {
-                const meta = CATEGORY_META[category] || CATEGORY_META.other;
-                return (
-                  <div key={category} className="space-y-4">
-                    <div className="flex items-center gap-2 px-2 mb-2">
-                      <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--text-muted)]" style={{ color: meta.color }}>{meta.label}</span>
-                      <div className="h-px flex-1 bg-white/5" />
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {attentionMarkers.map((marker, index) => {
+                  const meta = CATEGORY_META[marker.category] || CATEGORY_META.other;
+
+                  return (
+                    <div key={`${marker.name}-${index}`} className="space-y-2">
+                      <div className="flex items-center gap-2 px-1">
+                        <span
+                          className="rounded-full border px-2 py-1 text-[10px] font-black uppercase tracking-[0.18em]"
+                          style={{
+                            color: meta.color,
+                            borderColor: `${meta.color}33`,
+                            backgroundColor: `${meta.color}12`,
+                          }}
+                        >
+                          {meta.label}
+                        </span>
+                      </div>
+                      <BiomarkerCard
+                        name={marker.name}
+                        value={marker.numericValue ?? marker.value}
+                        unit={marker.unit}
+                        numericStatus={marker.numericStatus}
+                        clinicalStatus={marker.clinicalStatus}
+                        description={marker.description}
+                        note={marker.note}
+                        normalRange={marker.normalRange}
+                        confidence={marker.confidence_score}
+                        source={marker.source_anchor}
+                      />
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {biomarkers.map((b, i) => (
-                        <BiomarkerCard
-                          key={i}
-                          name={b.name}
-                          value={b.numericValue ?? b.value}
-                          unit={b.unit}
-                          numericStatus={b.numericStatus}
-                          clinicalStatus={b.clinicalStatus}
-                          description={b.description}
-                          note={b.note}
-                          normalRange={b.normalRange}
-                          confidence={b.confidence_score}
-                          source={b.source_anchor}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
           )}
 
@@ -418,132 +410,177 @@ function DevStat({ label, value }: { label: string; value: number }) {
   );
 }
 
-function TopMarkerSignalsChart({ markers }: { markers: Biomarker[] }) {
-  if (markers.length === 0) {
+function FeaturedMarkerPulse({ marker }: { marker: Biomarker | null }) {
+  if (!marker) {
     return (
       <div className="rounded-xl border border-white/5 bg-black/20 p-4 text-sm text-[var(--text-muted)]">
-        No standout marker signals yet. This report looks broadly stable.
+        No standout marker signal yet. This report looks broadly stable.
       </div>
     );
   }
 
-  const maxScore = Math.max(...markers.map((marker) => getMarkerPriorityScore(marker)), 1);
+  const tone = getMarkerTone(marker);
+  const meta = CATEGORY_META[marker.category] || CATEGORY_META.other;
+  const signalScore = Math.min(Math.max(Math.round((getMarkerPriorityScore(marker) / 190) * 100), 14), 100);
+  const radius = 42;
+  const circumference = 2 * Math.PI * radius;
+  const dashOffset = circumference - (signalScore / 100) * circumference;
 
   return (
-    <div className="space-y-4">
-      {markers.map((marker) => {
-        const tone = getMarkerTone(marker);
-        const width = Math.max((getMarkerPriorityScore(marker) / maxScore) * 100, 18);
+    <div className="grid gap-5 lg:grid-cols-[132px_minmax(0,1fr)] lg:items-center">
+      <div className="relative mx-auto h-32 w-32">
+        <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90">
+          <circle cx="50" cy="50" r={radius} fill="none" stroke="var(--bg-card-hover)" strokeWidth="8" />
+          <circle
+            cx="50"
+            cy="50"
+            r={radius}
+            fill="none"
+            stroke={tone.accent}
+            strokeWidth="8"
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={dashOffset}
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+          <span className="text-3xl font-black leading-none text-white">{signalScore}</span>
+          <span className="mt-1 text-[10px] font-bold uppercase tracking-[0.22em] text-[var(--text-muted)]">
+            Signal
+          </span>
+        </div>
+      </div>
 
-        return (
-          <div key={marker.name} className="rounded-xl border border-white/5 bg-black/20 p-3">
-            <div className="mb-2 flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-sm font-semibold leading-snug text-white">{marker.name}</p>
-                <p className="mt-1 text-xs leading-relaxed text-[var(--text-muted)]">
-                  {getMarkerSignalSummary(marker)}
-                </p>
-              </div>
-              <span
-                className="shrink-0 rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-[0.18em]"
-                style={{
-                  color: tone.accent,
-                  backgroundColor: tone.tint,
-                  borderColor: tone.border,
-                }}
-              >
-                {tone.label}
-              </span>
-            </div>
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            className="rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-[0.18em]"
+            style={{
+              color: tone.accent,
+              backgroundColor: tone.tint,
+              borderColor: tone.border,
+            }}
+          >
+            {tone.label}
+          </span>
+          <span
+            className="rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-[0.18em]"
+            style={{
+              color: meta.color,
+              borderColor: `${meta.color}33`,
+              backgroundColor: `${meta.color}12`,
+            }}
+          >
+            {meta.label}
+          </span>
+        </div>
 
-            <div className="h-2 overflow-hidden rounded-full bg-[var(--bg-card-hover)]">
-              <div
-                className="h-full rounded-full transition-all duration-700 ease-out"
-                style={{
-                  width: `${width}%`,
-                  background: `linear-gradient(90deg, ${tone.accent}, rgba(255,255,255,0.16))`,
-                }}
-              />
-            </div>
+        <div>
+          <p className="text-lg font-bold leading-tight text-white">{marker.name}</p>
+          <p className="mt-2 text-sm leading-relaxed text-[var(--text-secondary)]">
+            {getMarkerSignalSummary(marker)}
+          </p>
+        </div>
 
-            <div className="mt-2 flex items-center justify-between gap-3 text-[11px] text-[var(--text-muted)]">
-              <span>{formatMarkerReading(marker)}</span>
-              <span>{getMarkerReferenceText(marker)}</span>
-            </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-xl border border-white/5 bg-black/20 p-3">
+            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--text-muted)]">
+              Current Reading
+            </p>
+            <p className="mt-1 text-sm font-semibold text-white">{formatMarkerReading(marker)}</p>
           </div>
-        );
-      })}
+          <div className="rounded-xl border border-white/5 bg-black/20 p-3">
+            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--text-muted)]">
+              Expected
+            </p>
+            <p className="mt-1 text-sm font-semibold text-white">{getMarkerReferenceText(marker)}</p>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
 
-function ReferenceRangeSnapshot({
-  markers,
+function FeaturedMarkerRange({
+  marker,
 }: {
-  markers: Array<Biomarker & { numericValue: number; normalRange: { min: number; max: number } }>;
+  marker: (Biomarker & { numericValue: number; normalRange: { min: number; max: number } }) | null;
 }) {
-  if (markers.length === 0) {
+  if (!marker) {
     return (
       <div className="rounded-xl border border-white/5 bg-black/20 p-4 text-sm text-[var(--text-muted)]">
-        This report doesn&apos;t include enough numeric markers with reference ranges to draw a chart.
+        This report doesn&apos;t include a standout numeric marker with a reference range to chart yet.
       </div>
     );
   }
 
+  const tone = getMarkerTone(marker);
+  const rangeWindow = getRangeWindow(marker);
+
+  if (!rangeWindow) {
+    return null;
+  }
+
   return (
     <div className="space-y-4">
-      {markers.map((marker) => {
-        const tone = getMarkerTone(marker);
-        const rangeWindow = getRangeWindow(marker);
-
-        if (!rangeWindow) return null;
-
-        return (
-          <div key={marker.name} className="rounded-xl border border-white/5 bg-black/20 p-3">
-            <div className="mb-2 flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-sm font-semibold leading-snug text-white">{marker.name}</p>
-                <p className="mt-1 text-xs leading-relaxed text-[var(--text-muted)]">
-                  {getRangeInsight(marker)}
-                </p>
-              </div>
-              <div className="shrink-0 text-right">
-                <p className="text-sm font-black" style={{ color: tone.accent }}>
-                  {formatMarkerReading(marker)}
-                </p>
-                <p className="text-[11px] text-[var(--text-muted)]">
-                  Ref {formatMetricNumber(marker.normalRange.min)}-{formatMetricNumber(marker.normalRange.max)} {marker.unit}
-                </p>
-              </div>
-            </div>
-
-            <div className="relative mt-3 h-3 rounded-full bg-[var(--bg-card-hover)]">
-              <div
-                className="absolute inset-y-0 rounded-full bg-emerald-500/20"
-                style={{
-                  left: `${rangeWindow.normalStart}%`,
-                  width: `${rangeWindow.normalWidth}%`,
-                }}
-              />
-              <div
-                className="absolute top-1/2 h-4 w-4 rounded-full border-2 border-[var(--bg-card)]"
-                style={{
-                  left: `${rangeWindow.markerPosition}%`,
-                  transform: 'translate(-50%, -50%)',
-                  backgroundColor: tone.accent,
-                  boxShadow: '0 0 0 4px rgba(8, 10, 20, 0.28)',
-                }}
-              />
-            </div>
-
-            <div className="mt-2 flex items-center justify-between text-[10px] text-[var(--text-muted)]">
-              <span>{formatMetricNumber(rangeWindow.displayMin)}</span>
-              <span>Expected band</span>
-              <span>{formatMetricNumber(rangeWindow.displayMax)}</span>
-            </div>
+      <div className="rounded-xl border border-white/5 bg-black/20 p-4">
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-lg font-bold leading-tight text-white">{marker.name}</p>
+            <p className="mt-2 text-sm leading-relaxed text-[var(--text-secondary)]">
+              {getRangeInsight(marker)}
+            </p>
           </div>
-        );
-      })}
+          <div className="shrink-0 text-right">
+            <p className="text-xl font-black" style={{ color: tone.accent }}>
+              {formatMarkerReading(marker)}
+            </p>
+            <p className="text-[11px] text-[var(--text-muted)]">
+              Ref {formatMetricNumber(marker.normalRange.min)}-{formatMetricNumber(marker.normalRange.max)} {marker.unit}
+            </p>
+          </div>
+        </div>
+
+        <div className="relative mt-6 h-3 rounded-full bg-[var(--bg-card-hover)]">
+          <div
+            className="absolute inset-y-0 rounded-full bg-emerald-500/20"
+            style={{
+              left: `${rangeWindow.normalStart}%`,
+              width: `${rangeWindow.normalWidth}%`,
+            }}
+          />
+          <div
+            className="absolute top-1/2 h-4 w-4 rounded-full border-2 border-[var(--bg-card)]"
+            style={{
+              left: `${rangeWindow.markerPosition}%`,
+              transform: 'translate(-50%, -50%)',
+              backgroundColor: tone.accent,
+              boxShadow: '0 0 0 4px rgba(8, 10, 20, 0.28)',
+            }}
+          />
+        </div>
+
+        <div className="mt-3 flex items-center justify-between text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)]">
+          <span>{formatMetricNumber(rangeWindow.displayMin)}</span>
+          <span>Expected Band</span>
+          <span>{formatMetricNumber(rangeWindow.displayMax)}</span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <div className="rounded-xl border border-white/5 bg-black/20 p-3">
+          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--text-muted)]">Low End</p>
+          <p className="mt-1 text-sm font-semibold text-white">{formatMetricNumber(marker.normalRange.min)}</p>
+        </div>
+        <div className="rounded-xl border border-white/5 bg-black/20 p-3">
+          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--text-muted)]">Current</p>
+          <p className="mt-1 text-sm font-semibold text-white">{formatMetricNumber(marker.numericValue)}</p>
+        </div>
+        <div className="rounded-xl border border-white/5 bg-black/20 p-3">
+          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--text-muted)]">High End</p>
+          <p className="mt-1 text-sm font-semibold text-white">{formatMetricNumber(marker.normalRange.max)}</p>
+        </div>
+      </div>
     </div>
   );
 }
