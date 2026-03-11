@@ -17,10 +17,10 @@ interface LipidBar {
 
 export default function LipidChart({ cholesterol, hdl, ldl, triglycerides }: LipidChartProps) {
   const bars: LipidBar[] = [
-    cholesterol ? { name: 'Total Chol.', value: cholesterol, ref: 200, refLabel: '<200', color: cholesterol > 239 ? '#ef4444' : cholesterol > 200 ? '#f59e0b' : '#10b981' } : null,
-    hdl ? { name: 'HDL', value: hdl, ref: 40, refLabel: '>40', color: hdl < 40 ? '#ef4444' : '#10b981' } : null,
-    ldl ? { name: 'LDL', value: ldl, ref: 100, refLabel: '<100', color: ldl > 159 ? '#ef4444' : ldl > 100 ? '#f59e0b' : '#10b981' } : null,
-    triglycerides ? { name: 'Triglyc.', value: triglycerides, ref: 150, refLabel: '<150', color: triglycerides > 199 ? '#ef4444' : triglycerides > 150 ? '#f59e0b' : '#10b981' } : null,
+    cholesterol !== null && cholesterol !== undefined ? { name: 'Total Chol.', value: cholesterol, ref: 200, refLabel: '<200', color: cholesterol > 239 ? '#ef4444' : cholesterol > 200 ? '#f59e0b' : '#10b981' } : null,
+    hdl !== null && hdl !== undefined ? { name: 'HDL', value: hdl, ref: 40, refLabel: '>40', color: hdl < 40 ? '#ef4444' : '#10b981' } : null,
+    ldl !== null && ldl !== undefined ? { name: 'LDL', value: ldl, ref: 100, refLabel: '<100', color: ldl > 159 ? '#ef4444' : ldl > 100 ? '#f59e0b' : '#10b981' } : null,
+    triglycerides !== null && triglycerides !== undefined ? { name: 'Triglyc.', value: triglycerides, ref: 150, refLabel: '<150', color: triglycerides > 199 ? '#ef4444' : triglycerides > 150 ? '#f59e0b' : '#10b981' } : null,
   ].filter(Boolean) as LipidBar[];
 
   if (bars.length === 0) return null;

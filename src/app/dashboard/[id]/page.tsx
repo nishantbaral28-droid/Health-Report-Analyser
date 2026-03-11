@@ -58,6 +58,23 @@ const CATEGORY_META: Record<string, { label: string; icon: React.ReactNode; colo
   other: { label: 'Other Biomarkers', icon: <Activity className="w-4 h-4" />, color: 'var(--text-muted)' },
 };
 
+const CLINICAL_PRIORITY: Record<ClinicalStatus, number> = {
+  HIGH_PRIORITY: 4.8,
+  CLINICALLY_NOTABLE: 3.8,
+  BORDERLINE: 2.6,
+  FAVORABLE: 1.7,
+  NORMAL: 1.2,
+  UNVERIFIED: 1.4,
+};
+
+const RISK_PRIORITY: Record<Biomarker['riskLevel'], number> = {
+  high_risk: 1.2,
+  borderline: 0.9,
+  low: 0.75,
+  unverified: 0.4,
+  normal: 0.2,
+};
+
 export default function DashboardPage() {
   const [insights, setInsights] = useState<Insights | null>(null);
   const [fileUrl, setFileUrl] = useState<string | null>(null);
@@ -109,26 +126,32 @@ export default function DashboardPage() {
     groupNormal[cat].push(b);
   });
 
-  const findVal = (key: string) => insights.biomarkers.find(b => b.name.toLowerCase().includes(key.toLowerCase()))?.numericValue;
-  const cholesterol = findVal('cholesterol');
-  const hdl = findVal('hdl');
-  const ldl = findVal('ldl');
-  const triglycerides = findVal('triglyceride');
-  const glucose = findVal('glucose');
-  const hba1cValue = insights.biomarkers.find(b => b.name.toLowerCase().includes('hba1c') || b.name.toLowerCase().includes('a1c'))?.numericValue;
+  const findMarkerValue = (name: string) =>
+    insights.biomarkers.find((biomarker) => biomarker.name.toLowerCase() === name.toLowerCase())?.numericValue;
 
-  const hasLipid = cholesterol || hdl || ldl || triglycerides;
-  const hasSugar = glucose || hba1cValue;
-  const totalMarkers = insights.stats.normal + insights.stats.highRisk + insights.stats.borderline;
-  const attentionPercent = totalMarkers > 0 ? Math.round(((insights.stats.highRisk + insights.stats.borderline) / totalMarkers) * 100) : 0;
-  const focusDrivers = Object.entries(groupPriority)
-    .map(([category, biomarkers]) => ({
-      label: (CATEGORY_META[category] || CATEGORY_META.other).label,
-      color: (CATEGORY_META[category] || CATEGORY_META.other).color,
-      count: biomarkers.length,
-    }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 3);
+  const cholesterol = findMarkerValue('Total Cholesterol');
+  const hdl = findMarkerValue('HDL Cholesterol');
+  const ldl = findMarkerValue('LDL Cholesterol');
+  const triglycerides = findMarkerValue('Triglycerides');
+  const glucose = findMarkerValue('Fasting Glucose');
+  const hba1cValue = findMarkerValue('HbA1c');
+
+  const hasLipid = [cholesterol, hdl, ldl, triglycerides].some((value) => value !== null && value !== undefined);
+  const hasSugar = [glucose, hba1cValue].some((value) => value !== null && value !== undefined);
+  const rankedMarkerPool = [...(notableBiomarkers.length > 0 ? notableBiomarkers : insights.biomarkers)].sort(sortBiomarkersByPriority);
+  const signalChartMarkers = rankedMarkerPool.slice(0, 5);
+  const rangeChartCandidates = [...rankedMarkerPool, ...insights.biomarkers]
+    .filter(hasNumericRange)
+    .sort(sortBiomarkersByPriority);
+  const rangeChartMarkers: Array<Biomarker & { numericValue: number; normalRange: { min: number; max: number } }> = [];
+  const seenRangeMarkers = new Set<string>();
+
+  rangeChartCandidates.forEach((marker) => {
+    if (!seenRangeMarkers.has(marker.name) && rangeChartMarkers.length < 4) {
+      seenRangeMarkers.add(marker.name);
+      rangeChartMarkers.push(marker);
+    }
+  });
 
   return (
     <div className="min-h-screen bg-[var(--bg-base)]">
@@ -221,28 +244,29 @@ export default function DashboardPage() {
           </div>
 
           <div className="surface-card p-6">
-            <div className="mb-5 flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-xs font-black uppercase tracking-widest text-white">Marker Balance</h2>
-                <p className="mt-1 text-xs text-[var(--text-muted)]">How much of your report looks stable vs needs attention.</p>
+            <div className="mb-5">
+              <div className="mb-2 flex items-center gap-2">
+                <Activity className="h-4 w-4 text-[var(--accent-red)]" />
+                <h2 className="text-xs font-black uppercase tracking-widest text-white">Top Marker Signals</h2>
               </div>
-              <div className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">
-                {totalMarkers} markers
-              </div>
+              <p className="text-xs text-[var(--text-muted)]">
+                A quick visual of the markers standing out most in this uploaded report.
+              </p>
             </div>
-            <MarkerBalanceRing
-              normal={insights.stats.normal}
-              attention={insights.stats.highRisk + insights.stats.borderline}
-              attentionPercent={attentionPercent}
-            />
+            <TopMarkerSignalsChart markers={signalChartMarkers} />
           </div>
 
           <div className="surface-card p-6">
             <div className="mb-5">
-              <h2 className="text-xs font-black uppercase tracking-widest text-white">What&apos;s Driving Focus</h2>
-              <p className="mt-1 text-xs text-[var(--text-muted)]">The areas contributing most to your current focus vector.</p>
+              <div className="mb-2 flex items-center gap-2">
+                <TrendingUp className="h-4 w-4 text-[var(--accent-purple)]" />
+                <h2 className="text-xs font-black uppercase tracking-widest text-white">Reference Range View</h2>
+              </div>
+              <p className="text-xs text-[var(--text-muted)]">
+                See where the strongest numeric markers land relative to their expected range.
+              </p>
             </div>
-            <FocusDriversChart drivers={focusDrivers} />
+            <ReferenceRangeSnapshot markers={rangeChartMarkers} />
           </div>
         </div>
 
@@ -394,118 +418,302 @@ function DevStat({ label, value }: { label: string; value: number }) {
   );
 }
 
-function MarkerBalanceRing({
-  normal,
-  attention,
-  attentionPercent,
-}: {
-  normal: number;
-  attention: number;
-  attentionPercent: number;
-}) {
-  const radius = 42;
-  const circumference = 2 * Math.PI * radius;
-  const progress = (attentionPercent / 100) * circumference;
-
-  return (
-    <div className="flex flex-col items-center justify-center gap-5 sm:flex-row">
-      <div className="relative flex h-32 w-32 items-center justify-center">
-        <svg viewBox="0 0 100 100" className="-rotate-90 h-full w-full">
-          <circle
-            cx="50"
-            cy="50"
-            r={radius}
-            fill="none"
-            stroke="var(--bg-card-hover)"
-            strokeWidth="8"
-          />
-          <circle
-            cx="50"
-            cy="50"
-            r={radius}
-            fill="none"
-            stroke="var(--accent-red)"
-            strokeWidth="8"
-            strokeLinecap="round"
-            strokeDasharray={`${progress} ${circumference}`}
-            className="transition-all duration-700 ease-out"
-          />
-        </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-          <span className="text-2xl font-black text-white">{attentionPercent}%</span>
-          <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--text-muted)]">
-            Need Attention
-          </span>
-        </div>
-      </div>
-
-      <div className="flex w-full max-w-[12rem] flex-col gap-3">
-        <div className="rounded-xl border border-white/5 bg-black/20 p-3">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-xs font-semibold text-white">Stable Markers</span>
-            <span className="text-sm font-black text-[var(--accent-green)]">{normal}</span>
-          </div>
-          <div className="h-2 rounded-full bg-[var(--bg-card-hover)]">
-            <div
-              className="h-2 rounded-full bg-[var(--accent-green)]"
-              style={{ width: `${100 - attentionPercent}%` }}
-            />
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-white/5 bg-black/20 p-3">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-xs font-semibold text-white">Priority Markers</span>
-            <span className="text-sm font-black text-[var(--accent-red)]">{attention}</span>
-          </div>
-          <div className="h-2 rounded-full bg-[var(--bg-card-hover)]">
-            <div
-              className="h-2 rounded-full bg-[var(--accent-red)]"
-              style={{ width: `${attentionPercent}%` }}
-            />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function FocusDriversChart({
-  drivers,
-}: {
-  drivers: Array<{ label: string; color: string; count: number }>;
-}) {
-  if (drivers.length === 0) {
+function TopMarkerSignalsChart({ markers }: { markers: Biomarker[] }) {
+  if (markers.length === 0) {
     return (
       <div className="rounded-xl border border-white/5 bg-black/20 p-4 text-sm text-[var(--text-muted)]">
-        No standout driver yet. Your report looks broadly stable.
+        No standout marker signals yet. This report looks broadly stable.
       </div>
     );
   }
 
-  const maxCount = Math.max(...drivers.map((driver) => driver.count));
+  const maxScore = Math.max(...markers.map((marker) => getMarkerPriorityScore(marker)), 1);
 
   return (
     <div className="space-y-4">
-      {drivers.map((driver) => (
-        <div key={driver.label}>
-          <div className="mb-1.5 flex items-center justify-between gap-3">
-            <span className="text-sm font-medium text-white">{driver.label}</span>
-            <span className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
-              {driver.count} marker{driver.count > 1 ? 's' : ''}
-            </span>
+      {markers.map((marker) => {
+        const tone = getMarkerTone(marker);
+        const width = Math.max((getMarkerPriorityScore(marker) / maxScore) * 100, 18);
+
+        return (
+          <div key={marker.name} className="rounded-xl border border-white/5 bg-black/20 p-3">
+            <div className="mb-2 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold leading-snug text-white">{marker.name}</p>
+                <p className="mt-1 text-xs leading-relaxed text-[var(--text-muted)]">
+                  {getMarkerSignalSummary(marker)}
+                </p>
+              </div>
+              <span
+                className="shrink-0 rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-[0.18em]"
+                style={{
+                  color: tone.accent,
+                  backgroundColor: tone.tint,
+                  borderColor: tone.border,
+                }}
+              >
+                {tone.label}
+              </span>
+            </div>
+
+            <div className="h-2 overflow-hidden rounded-full bg-[var(--bg-card-hover)]">
+              <div
+                className="h-full rounded-full transition-all duration-700 ease-out"
+                style={{
+                  width: `${width}%`,
+                  background: `linear-gradient(90deg, ${tone.accent}, rgba(255,255,255,0.16))`,
+                }}
+              />
+            </div>
+
+            <div className="mt-2 flex items-center justify-between gap-3 text-[11px] text-[var(--text-muted)]">
+              <span>{formatMarkerReading(marker)}</span>
+              <span>{getMarkerReferenceText(marker)}</span>
+            </div>
           </div>
-          <div className="h-3 overflow-hidden rounded-full bg-[var(--bg-card-hover)]">
-            <div
-              className="h-full rounded-full transition-all duration-700 ease-out"
-              style={{
-                width: `${Math.max((driver.count / maxCount) * 100, 16)}%`,
-                background: `linear-gradient(90deg, ${driver.color}, rgba(255,255,255,0.16))`,
-              }}
-            />
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
+}
+
+function ReferenceRangeSnapshot({
+  markers,
+}: {
+  markers: Array<Biomarker & { numericValue: number; normalRange: { min: number; max: number } }>;
+}) {
+  if (markers.length === 0) {
+    return (
+      <div className="rounded-xl border border-white/5 bg-black/20 p-4 text-sm text-[var(--text-muted)]">
+        This report doesn&apos;t include enough numeric markers with reference ranges to draw a chart.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {markers.map((marker) => {
+        const tone = getMarkerTone(marker);
+        const rangeWindow = getRangeWindow(marker);
+
+        if (!rangeWindow) return null;
+
+        return (
+          <div key={marker.name} className="rounded-xl border border-white/5 bg-black/20 p-3">
+            <div className="mb-2 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold leading-snug text-white">{marker.name}</p>
+                <p className="mt-1 text-xs leading-relaxed text-[var(--text-muted)]">
+                  {getRangeInsight(marker)}
+                </p>
+              </div>
+              <div className="shrink-0 text-right">
+                <p className="text-sm font-black" style={{ color: tone.accent }}>
+                  {formatMarkerReading(marker)}
+                </p>
+                <p className="text-[11px] text-[var(--text-muted)]">
+                  Ref {formatMetricNumber(marker.normalRange.min)}-{formatMetricNumber(marker.normalRange.max)} {marker.unit}
+                </p>
+              </div>
+            </div>
+
+            <div className="relative mt-3 h-3 rounded-full bg-[var(--bg-card-hover)]">
+              <div
+                className="absolute inset-y-0 rounded-full bg-emerald-500/20"
+                style={{
+                  left: `${rangeWindow.normalStart}%`,
+                  width: `${rangeWindow.normalWidth}%`,
+                }}
+              />
+              <div
+                className="absolute top-1/2 h-4 w-4 rounded-full border-2 border-[var(--bg-card)]"
+                style={{
+                  left: `${rangeWindow.markerPosition}%`,
+                  transform: 'translate(-50%, -50%)',
+                  backgroundColor: tone.accent,
+                  boxShadow: '0 0 0 4px rgba(8, 10, 20, 0.28)',
+                }}
+              />
+            </div>
+
+            <div className="mt-2 flex items-center justify-between text-[10px] text-[var(--text-muted)]">
+              <span>{formatMetricNumber(rangeWindow.displayMin)}</span>
+              <span>Expected band</span>
+              <span>{formatMetricNumber(rangeWindow.displayMax)}</span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function hasNumericRange(
+  marker: Biomarker
+): marker is Biomarker & { numericValue: number; normalRange: { min: number; max: number } } {
+  return marker.numericValue !== null && marker.normalRange !== null;
+}
+
+function getMarkerDeviationRatio(marker: Biomarker): number {
+  if (!hasNumericRange(marker)) {
+    if (marker.clinicalStatus === 'HIGH_PRIORITY') return 1.15;
+    if (marker.clinicalStatus === 'CLINICALLY_NOTABLE') return 0.9;
+    if (marker.clinicalStatus === 'BORDERLINE') return 0.55;
+    if (marker.clinicalStatus === 'FAVORABLE') return 0.3;
+    return 0.2;
+  }
+
+  const span = Math.max(marker.normalRange.max - marker.normalRange.min, 1);
+
+  if (marker.numericValue < marker.normalRange.min) {
+    return (marker.normalRange.min - marker.numericValue) / span;
+  }
+
+  if (marker.numericValue > marker.normalRange.max) {
+    return (marker.numericValue - marker.normalRange.max) / span;
+  }
+
+  if (marker.clinicalStatus === 'BORDERLINE') return 0.45;
+  if (marker.clinicalStatus === 'FAVORABLE') return 0.25;
+
+  return 0.18;
+}
+
+function getMarkerPriorityScore(marker: Biomarker): number {
+  const clinicalWeight = CLINICAL_PRIORITY[marker.clinicalStatus ?? 'UNVERIFIED'] ?? 1.4;
+  const riskWeight = RISK_PRIORITY[marker.riskLevel] ?? 0.4;
+  const deviationWeight = getMarkerDeviationRatio(marker);
+  const confidenceWeight = marker.confidence_score ?? marker.confidence ?? 0.75;
+
+  return clinicalWeight * 28 + riskWeight * 10 + deviationWeight * 55 + confidenceWeight * 7;
+}
+
+function sortBiomarkersByPriority(a: Biomarker, b: Biomarker) {
+  return getMarkerPriorityScore(b) - getMarkerPriorityScore(a);
+}
+
+function formatMetricNumber(value: number): string {
+  const absoluteValue = Math.abs(value);
+  const fractionDigits = absoluteValue >= 100 || Number.isInteger(value) ? 0 : absoluteValue >= 10 ? 1 : 2;
+
+  return Number(value.toFixed(fractionDigits)).toString();
+}
+
+function formatMarkerReading(marker: Biomarker): string {
+  if (marker.numericValue !== null) {
+    const formattedValue = formatMetricNumber(marker.numericValue);
+    return marker.unit ? `${formattedValue} ${marker.unit}` : formattedValue;
+  }
+
+  return marker.value;
+}
+
+function getMarkerReferenceText(marker: Biomarker): string {
+  if (!hasNumericRange(marker)) {
+    return marker.unit || 'Qualitative result';
+  }
+
+  const unitSuffix = marker.unit ? ` ${marker.unit}` : '';
+  return `Ref ${formatMetricNumber(marker.normalRange.min)}-${formatMetricNumber(marker.normalRange.max)}${unitSuffix}`;
+}
+
+function getMarkerSignalSummary(marker: Biomarker): string {
+  if (hasNumericRange(marker)) {
+    if (marker.clinicalStatus === 'BORDERLINE' && marker.numericStatus === 'WITHIN_RANGE') {
+      return `${formatMarkerReading(marker)} · borderline by clinical cutoff`;
+    }
+
+    if (marker.clinicalStatus === 'FAVORABLE') {
+      return `${formatMarkerReading(marker)} · stronger than the basic target`;
+    }
+
+    if (marker.numericStatus === 'ABOVE_RANGE') {
+      return `${formatMarkerReading(marker)} · above expected range`;
+    }
+
+    if (marker.numericStatus === 'BELOW_RANGE') {
+      return `${formatMarkerReading(marker)} · below expected range`;
+    }
+
+    return `${formatMarkerReading(marker)} · within expected range`;
+  }
+
+  if (marker.clinicalStatus === 'HIGH_PRIORITY') {
+    return `${marker.value} result flagged for prompt attention`;
+  }
+
+  return `${marker.value} result captured from the report`;
+}
+
+function getRangeInsight(marker: Biomarker): string {
+  if (marker.clinicalStatus === 'HIGH_PRIORITY') return 'Positive or high-priority finding';
+  if (marker.numericStatus === 'ABOVE_RANGE') return 'Above expected range';
+  if (marker.numericStatus === 'BELOW_RANGE') return 'Below expected range';
+  if (marker.clinicalStatus === 'BORDERLINE') return 'Near a caution zone';
+  if (marker.clinicalStatus === 'FAVORABLE') return 'In a stronger protective range';
+  return 'Within expected range';
+}
+
+function getRangeWindow(marker: Biomarker & { numericValue: number; normalRange: { min: number; max: number } }) {
+  const span = Math.max(marker.normalRange.max - marker.normalRange.min, 1);
+  const lowerOvershoot = marker.numericValue < marker.normalRange.min ? marker.normalRange.min - marker.numericValue : 0;
+  const upperOvershoot = marker.numericValue > marker.normalRange.max ? marker.numericValue - marker.normalRange.max : 0;
+  const padding = Math.max(span * 0.45, lowerOvershoot * 1.2, upperOvershoot * 1.2, 1);
+  const displayMin = Math.max(0, marker.normalRange.min - padding);
+  const displayMax = marker.normalRange.max + padding;
+  const displaySpan = Math.max(displayMax - displayMin, 1);
+  const markerPosition = ((marker.numericValue - displayMin) / displaySpan) * 100;
+
+  return {
+    displayMin,
+    displayMax,
+    normalStart: ((marker.normalRange.min - displayMin) / displaySpan) * 100,
+    normalWidth: (span / displaySpan) * 100,
+    markerPosition: Math.min(Math.max(markerPosition, 4), 96),
+  };
+}
+
+function getMarkerTone(marker: Biomarker) {
+  if (marker.clinicalStatus === 'HIGH_PRIORITY') {
+    return {
+      accent: '#ff5b61',
+      tint: 'rgba(255, 91, 97, 0.12)',
+      border: 'rgba(255, 91, 97, 0.24)',
+      label: 'High Priority',
+    };
+  }
+
+  if (marker.clinicalStatus === 'CLINICALLY_NOTABLE') {
+    return {
+      accent: '#f97316',
+      tint: 'rgba(249, 115, 22, 0.12)',
+      border: 'rgba(249, 115, 22, 0.24)',
+      label: 'Notable',
+    };
+  }
+
+  if (marker.clinicalStatus === 'BORDERLINE') {
+    return {
+      accent: '#f59e0b',
+      tint: 'rgba(245, 158, 11, 0.12)',
+      border: 'rgba(245, 158, 11, 0.24)',
+      label: 'Borderline',
+    };
+  }
+
+  if (marker.riskLevel === 'low') {
+    return {
+      accent: '#38bdf8',
+      tint: 'rgba(56, 189, 248, 0.12)',
+      border: 'rgba(56, 189, 248, 0.24)',
+      label: 'Low',
+    };
+  }
+
+  return {
+    accent: '#10b981',
+    tint: 'rgba(16, 185, 129, 0.12)',
+    border: 'rgba(16, 185, 129, 0.24)',
+    label: marker.clinicalStatus === 'FAVORABLE' ? 'Favorable' : 'Stable',
+  };
 }

@@ -3,11 +3,11 @@ import { generateObject } from 'ai';
 import { google } from '@ai-sdk/google';
 import { z } from 'zod';
 import {
-  BIOMARKER_REFERENCES,
   computeFlag,
   applyClinicalRules,
   getDirectionalNote,
   getReference,
+  isCompatibleUnit,
   type NumericStatus,
   type ClinicalStatus
 } from '@/lib/biomarkers';
@@ -81,9 +81,9 @@ export async function POST(req: Request) {
     }
 
     // Validate file type
-    const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png'];
+    const allowedTypes = ['application/pdf'];
     if (!allowedTypes.includes(file.type)) {
-      return NextResponse.json({ error: 'Unsupported file type. Please upload a PDF, JPG, or PNG.' }, { status: 400 });
+      return NextResponse.json({ error: 'Please upload a text-based PDF report. Image and scanned report uploads are not supported yet.' }, { status: 400 });
     }
 
     // Validate file size (5MB max)
@@ -115,51 +115,64 @@ export async function POST(req: Request) {
       }
     }
 
-    // 2. AI Extraction — use Gemini if configured, otherwise use demo data
+    // 2. AI Extraction — real report analysis only
     let extraction;
 
-    if (isAIConfigured()) {
-      try {
-        // const { createGoogleGenerativeAI } = await import('@ai-sdk/google'); // Moved to top
-        // const { generateObject } = await import('ai'); // Moved to top
+    if (!isAIConfigured()) {
+      return NextResponse.json({
+        error: 'Report analysis is temporarily unavailable because the AI extraction service is not configured.'
+      }, { status: 503 });
+    }
 
-        const googleModel = google('gemini-2.5-flash');
+    try {
+      const googleModel = google('gemini-2.5-flash');
 
-        const buffer = Buffer.from(await file.arrayBuffer());
+      const buffer = Buffer.from(await file.arrayBuffer());
 
-        // Parse PDF text locally to bypass AI SDK Buffer schema errors
-        let extractedText = '';
-        const rawText = buffer.toString('utf8');
-        if (rawText.startsWith('%PDF-')) {
-          try {
-            const PDFParser = require('pdf2json');
-            const pdfParser = new PDFParser(null, 1);
+      // Parse PDF text locally to bypass AI SDK Buffer schema errors
+      let extractedText = '';
+      const rawText = buffer.toString('utf8');
+      if (rawText.startsWith('%PDF-')) {
+        try {
+          const PDFParser = require('pdf2json');
+          const pdfParser = new PDFParser(null, 1);
 
-            extractedText = await new Promise((resolve, reject) => {
-              pdfParser.on('pdfParser_dataError', (errData: any) => reject(errData.parserError));
-              pdfParser.on('pdfParser_dataReady', () => {
-                resolve(pdfParser.getRawTextContent().replace(/\\r\\n|\\r|\\n/g, '\n'));
-              });
-              pdfParser.parseBuffer(buffer);
+          extractedText = await new Promise((resolve, reject) => {
+            pdfParser.on('pdfParser_dataError', (errData: any) => reject(errData.parserError));
+            pdfParser.on('pdfParser_dataReady', () => {
+              resolve(pdfParser.getRawTextContent().replace(/\\r\\n|\\r|\\n/g, '\n'));
             });
-          } catch (pdfErr: any) {
-            extractedText = `(PDF parsing failed.)`;
-            console.warn('PDF parsing failed:', pdfErr);
-          }
-        } else {
-          extractedText = rawText;
+            pdfParser.parseBuffer(buffer);
+          });
+        } catch (pdfErr: any) {
+          console.warn('PDF parsing failed:', pdfErr);
+          return NextResponse.json({
+            error: 'This PDF could not be parsed as structured text. Please upload a text-based PDF export from the lab portal.'
+          }, { status: 400 });
         }
+      } else {
+        return NextResponse.json({
+          error: 'Only text-based PDF reports are supported right now.'
+        }, { status: 400 });
+      }
 
-        const { object } = await generateObject({
-          model: googleModel,
-          schema: extractionSchema,
-          messages: [
-            {
-              role: 'user',
-              content: [
-                {
-                  type: 'text',
-                  text: `You are an expert OCR parser and clinical intelligence safety validation engine.
+      const normalizedExtractedText = extractedText.replace(/\s+/g, ' ').trim();
+      if (normalizedExtractedText.length < 80 || !/[a-zA-Z]{3,}/.test(normalizedExtractedText)) {
+        return NextResponse.json({
+          error: 'This looks like a scanned or image-based PDF. Please upload a text-based PDF export from the lab portal.'
+        }, { status: 400 });
+      }
+
+      const { object } = await generateObject({
+        model: googleModel,
+        schema: extractionSchema,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: `You are an expert OCR parser and clinical intelligence safety validation engine.
 CRITICAL SAFETY RULES:
 1. STRICT OCR ONLY: Extracted values must physically exist in the document text exactly as you extract them. Zero hallucinations.
 2. TABLE-FIRST PARSING (CRITICAL): If data looks tabular, you MUST extract (TestName, Result, Unit, Range) from the SAME ROW. Disallow token-nearness across rows.
@@ -181,19 +194,23 @@ Populate \`confidence_score\` mathematically (0.0 to 1.0) based on:
 === RAW ADJACENT TEXT EXTRACTED FROM REPORT ===
 ${extractedText}
 ===============================================`
-                }
-              ]
-            }
-          ]
-        });
-        extraction = object;
-      } catch (aiError: any) {
-        console.warn('AI extraction failed, using demo data:', aiError.message);
-        extraction = generateDemoExtraction();
-      }
-    } else {
-      console.log('AI_API_KEY not configured — using demo extraction data. Set AI_API_KEY in .env.local for real analysis.');
-      extraction = generateDemoExtraction();
+              }
+            ]
+          }
+        ]
+      });
+      extraction = object;
+    } catch (aiError: any) {
+      console.warn('AI extraction failed:', aiError.message);
+      return NextResponse.json({
+        error: 'We could not extract structured biomarkers from this report. Please try another text-based PDF export.'
+      }, { status: 422 });
+    }
+
+    if (!extraction?.biomarkers?.length) {
+      return NextResponse.json({
+        error: 'No supported biomarkers were detected in this PDF.'
+      }, { status: 422 });
     }
 
     // 3. Layer 3 — Strict Anti-Hallucination & Conflict Validation
@@ -259,6 +276,14 @@ ${extractedText}
          return;
       }
 
+      if (!isCompatibleUnit(b.unit, ref.unit, ref.subtype)) {
+        blockedBiomarkers.push({
+          ...b,
+          blocked_reason: `Unsupported Unit: expected ${ref.unit || 'qualitative'} but found ${b.unit || 'blank'}`
+        });
+        return;
+      }
+
       // Rule 5: Pass 1 - Recompute strict numeric flag
       const { numeric: pass1Numeric, clinical: pass1Clinical } = computeFlag(
         b.value_num,
@@ -280,7 +305,7 @@ ${extractedText}
         finalNumeric = 'UNVERIFIED';
         finalClinical = 'UNVERIFIED';
       } else {
-         finalClinical = applyClinicalRules(ref.name, finalNumeric, finalClinical, b.value_num);
+         finalClinical = applyClinicalRules(ref, finalNumeric, finalClinical, b.value_num);
       }
 
       // Direction-Aware Interpretation
@@ -304,7 +329,7 @@ ${extractedText}
         category: ref.category,
         description: ref.description,
         note,
-        normalRange: ref.normalRange || (b.ref_low !== null && b.ref_high !== null ? { min: b.ref_low, max: b.ref_high } : null),
+        normalRange: b.ref_low !== null && b.ref_high !== null ? { min: b.ref_low, max: b.ref_high } : ref.normalRange || null,
       });
     });
 
@@ -332,6 +357,19 @@ ${extractedText}
 
     if (verifiedBiomarkers.length < extraction.biomarkers.length) {
        console.warn(`Validation Engine dropped ${blockedBiomarkers.length} biomarkers.`);
+    }
+
+    if (verifiedBiomarkers.length === 0) {
+      return NextResponse.json({
+        error: 'We could not verify any supported biomarkers from this PDF. Please upload a clearer text-based lab export.'
+      }, { status: 422 });
+    }
+
+    const trustedBiomarkerCount = verifiedBiomarkers.filter((biomarker) => biomarker.clinicalStatus !== 'UNVERIFIED').length;
+    if (trustedBiomarkerCount === 0) {
+      return NextResponse.json({
+        error: 'The extracted rows were too uncertain to build a reliable dashboard. Please upload a clearer text-based PDF export.'
+      }, { status: 422 });
     }
 
     // 5. Generate Safe, Mathematical Summary and Recommendations
@@ -477,7 +515,7 @@ ${extractedText}
         borderline: verifiedBiomarkers.filter(b => b.riskLevel === 'borderline').length,
         highRisk: verifiedBiomarkers.filter(b => b.riskLevel === 'high_risk').length,
       },
-      isDemo: !isAIConfigured(),
+      isDemo: false,
     };
 
     return NextResponse.json({

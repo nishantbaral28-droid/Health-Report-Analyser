@@ -36,7 +36,11 @@ export default function UploadDropzone() {
       const data = await response.json();
       
       sessionStorage.setItem('current_insights', JSON.stringify(data.insights));
-      if (data.fileUrl) sessionStorage.setItem('current_fileUrl', data.fileUrl);
+      if (data.fileUrl) {
+        sessionStorage.setItem('current_fileUrl', data.fileUrl);
+      } else {
+        sessionStorage.removeItem('current_fileUrl');
+      }
 
       setUploadStatus('success');
       
@@ -57,8 +61,6 @@ export default function UploadDropzone() {
     onDrop,
     accept: {
       'application/pdf': ['.pdf'],
-      'image/jpeg': ['.jpg', '.jpeg'],
-      'image/png': ['.png']
     },
     maxFiles: 1,
     disabled: isUploading || uploadStatus === 'success'
@@ -102,7 +104,7 @@ export default function UploadDropzone() {
           ) : (
              <>
                <p className="text-base font-semibold text-[var(--text-primary)]">
-                 {isDragActive ? 'Drop your report here' : 'Drag & drop your lab report'}
+                 {isDragActive ? 'Drop your PDF here' : 'Drag & drop your lab report PDF'}
                </p>
                <p className="text-sm text-[var(--text-muted)]">
                  or <span className="text-[var(--accent-purple)] underline underline-offset-2">browse files</span>
@@ -111,6 +113,10 @@ export default function UploadDropzone() {
           )}
         </div>
       </div>
+
+      <p className="mt-3 text-center text-xs text-[var(--text-muted)]">
+        Text-based PDF exports only. Image files and scanned PDFs are not supported yet.
+      </p>
       
       {uploadStatus === 'error' && (
         <div className="mt-4 p-3 rounded-lg bg-[var(--accent-red)]/10 border border-[var(--accent-red)]/20">

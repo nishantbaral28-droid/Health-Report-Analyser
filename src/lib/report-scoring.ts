@@ -37,6 +37,15 @@ export interface ReportScores {
 }
 
 export function calculateReportScores(biomarkers: Biomarker[], userAge?: number): ReportScores {
+  const biomarkerMap = new Map(biomarkers.map((biomarker) => [biomarker.name.toLowerCase(), biomarker]));
+  const getBiomarker = (...names: string[]) => {
+    for (const name of names) {
+      const found = biomarkerMap.get(name.toLowerCase());
+      if (found) return found;
+    }
+    return undefined;
+  };
+
   // --- 1. Vitality Score (Immediate Systemic Balance) ---
   const total = biomarkers.length;
   const normal = biomarkers.filter(b => b.riskLevel === 'normal').length;
@@ -59,27 +68,25 @@ export function calculateReportScores(biomarkers: Biomarker[], userAge?: number)
   // Influencers: HDL, Vitamin D, HbA1c, CRP, Triglycerides
   let lScore = 75; // Baseline
 
-  const findB = (name: string) => biomarkers.find(b => b.name.toLowerCase().includes(name.toLowerCase()));
-
   // Positive Drivers
-  const hdl = findB('HDL Cholesterol');
+  const hdl = getBiomarker('HDL Cholesterol');
   if (hdl?.numericValue && hdl.numericValue >= 60) lScore += 10;
   else if (hdl?.clinicalStatus === 'CLINICALLY_NOTABLE') lScore -= 10;
 
-  const vitD = findB('Vitamin D');
+  const vitD = getBiomarker('Vitamin D');
   if (vitD?.numericValue && vitD.numericValue >= 40) lScore += 5;
   else if (vitD?.numericStatus === 'BELOW_RANGE') lScore -= 10;
 
-  const crp = findB('CRP') || findB('C-Reactive Protein');
+  const crp = getBiomarker('C-Reactive Protein');
   if (crp?.numericValue && crp.numericValue < 1.0) lScore += 10;
   else if (crp?.clinicalStatus === 'CLINICALLY_NOTABLE') lScore -= 15;
 
   // Negative Drivers (Metabolic Strain)
-  const a1c = findB('HbA1c');
+  const a1c = getBiomarker('HbA1c');
   if (a1c?.clinicalStatus === 'CLINICALLY_NOTABLE' || a1c?.clinicalStatus === 'HIGH_PRIORITY') lScore -= 20;
   else if (a1c?.clinicalStatus === 'BORDERLINE') lScore -= 10;
 
-  const tg = findB('Triglycerides');
+  const tg = getBiomarker('Triglycerides');
   if (tg?.clinicalStatus === 'CLINICALLY_NOTABLE') lScore -= 10;
 
   const longevityInputs = [hdl, vitD, crp, a1c, tg].filter(Boolean).length;
@@ -160,7 +167,7 @@ export function calculateReportScores(biomarkers: Biomarker[], userAge?: number)
     nextSteps = ['Optimize sleep hygiene', 'Consider Vitamin D supplementation if advised by GP'];
   }
 
-  const hgb = biomarkers.find(b => b.name.toLowerCase() === 'hemoglobin');
+  const hgb = getBiomarker('Hemoglobin');
   if (hgb?.riskLevel !== 'normal') {
     focusArea = 'Energy & Oxygenation';
     biggestWin = 'Optimizing Iron Stores';

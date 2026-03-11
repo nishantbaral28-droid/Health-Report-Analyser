@@ -74,7 +74,7 @@ export default async function AssessmentResultsPage(props: { searchParams: Promi
            </h1>
            
            <p className="text-sm text-[var(--text-secondary)] max-w-2xl bg-[var(--bg-card)] p-4 rounded-xl border border-[var(--border-color)]">
-             <strong className="text-white">Note:</strong> This is a preliminary risk screening based entirely on your self-reported habits. It is <strong className="text-orange-400">NOT</strong> a diagnostic medical report. Upload a clinical lab report for verified bio-marker analysis.
+             <strong className="text-white">Note:</strong> This is a preliminary habits heuristic based on your self-reported age, sex, habits, history, and symptoms. Age and sex are used only as light context modifiers, while your daily habits remain the main score driver. It is <strong className="text-orange-400">NOT</strong> a diagnostic medical report. Upload a clinical lab report for verified bio-marker analysis.
            </p>
         </div>
 
@@ -93,7 +93,7 @@ export default async function AssessmentResultsPage(props: { searchParams: Promi
            </div>
            <div className="w-px h-12 bg-[var(--border-color)] hidden sm:block" />
            <div>
-             <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider font-bold mb-1">Lifestyle Risk Index</p>
+             <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider font-bold mb-1">Lifestyle Habits Score</p>
              <p className="text-3xl font-black" style={{ color: scores.lifestyleRiskScore > 75 ? 'var(--accent-green)' : scores.lifestyleRiskScore > 50 ? 'var(--accent-blue)' : 'var(--accent-red)' }}>
                {scores.lifestyleRiskScore}/100
              </p>

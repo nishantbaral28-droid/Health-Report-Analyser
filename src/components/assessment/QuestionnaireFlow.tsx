@@ -129,7 +129,7 @@ export default function QuestionnaireFlow() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-[var(--text-secondary)] mb-3">Biological Sex (for metabolic baseline)</label>
+              <label className="block text-sm font-medium text-[var(--text-secondary)] mb-3">Biological Sex</label>
               <div className="flex flex-wrap gap-2">
                 {['Male', 'Female'].map(sex => (
                   <Chip key={sex} selected={answers.sex === sex} onClick={() => setAnswers({...answers, sex})}>

@@ -29,7 +29,7 @@ export default function Home() {
           </h1>
 
           <p className="text-base sm:text-lg md:text-xl text-[var(--text-secondary)] max-w-2xl mx-auto leading-relaxed">
-            Upload your blood work, lab results, or medical checkup reports. Our AI extracts every biomarker and builds a personalized insights dashboard in seconds.
+            Upload a text-based PDF lab report. Our AI extracts supported biomarkers and builds a personalized insights dashboard with confidence checks.
           </p>
 
           <div className="flex flex-col sm:flex-row flex-wrap gap-3 justify-center pt-2">
@@ -64,8 +64,8 @@ export default function Home() {
             {/* Connecting line (desktop only) */}
             <div className="hidden md:block absolute top-14 left-[16.66%] right-[16.66%] h-px bg-gradient-to-r from-[var(--accent-purple)] via-[var(--accent-blue)] to-[var(--accent-cyan)] opacity-30" />
 
-            <StepCard step={1} color="var(--accent-purple)" icon={<FileText className="w-7 h-7 text-white" />} title="Upload Report" description="Drag and drop your lab report — PDF, JPG, or PNG. We support CBC, metabolic panels, lipid profiles, thyroid panels, vitamin panels, and full-body health checkups." gradientFrom="var(--accent-purple)" gradientTo="var(--accent-blue)" />
-            <StepCard step={2} color="var(--accent-blue)" icon={<Brain className="w-7 h-7 text-white" />} title="AI Extraction" description="Our Gemini-powered engine reads every biomarker value, classifies it against medical reference ranges, and flags abnormal results automatically." gradientFrom="var(--accent-blue)" gradientTo="var(--accent-cyan)" />
+            <StepCard step={1} color="var(--accent-purple)" icon={<FileText className="w-7 h-7 text-white" />} title="Upload Report" description="Upload a text-based PDF from your lab portal. The current parser is optimized for CBC, lipid, glucose, vitamin, CRP, and infectious screening markers." gradientFrom="var(--accent-purple)" gradientTo="var(--accent-blue)" />
+            <StepCard step={2} color="var(--accent-blue)" icon={<Brain className="w-7 h-7 text-white" />} title="AI Extraction" description="Our Gemini-powered engine extracts supported biomarkers, checks them against report structure, and blocks uncertain rows instead of guessing." gradientFrom="var(--accent-blue)" gradientTo="var(--accent-cyan)" />
             <StepCard step={3} color="var(--accent-cyan)" icon={<BarChart3 className="w-7 h-7 text-white" />} title="Get Insights" description="View your personalized dashboard with color-coded risk indicators, lipid & blood sugar charts, and actionable health recommendations." gradientFrom="var(--accent-cyan)" gradientTo="var(--accent-green)" />
           </div>
         </div>
@@ -78,7 +78,7 @@ export default function Home() {
             <p className="text-sm font-semibold text-[var(--accent-blue)] uppercase tracking-wider mb-2">Compatibility</p>
             <h2 className="text-3xl md:text-4xl font-bold text-[var(--text-primary)]">Supported Test Types</h2>
             <p className="text-[var(--text-secondary)] mt-3 max-w-xl mx-auto">
-              Works with reports from any lab or hospital. Upload and we&apos;ll handle the rest.
+              Optimized for text-based PDF exports that include the supported biomarker panels below.
             </p>
           </div>
 
@@ -86,14 +86,14 @@ export default function Home() {
             <TestTypeCard icon={<Droplets className="w-6 h-6" />} name="Blood Test (CBC)" color="var(--accent-red)" />
             <TestTypeCard icon={<Heart className="w-6 h-6" />} name="Lipid Profile" color="var(--accent-purple)" />
             <TestTypeCard icon={<Activity className="w-6 h-6" />} name="Blood Sugar" color="var(--accent-blue)" />
-            <TestTypeCard icon={<Stethoscope className="w-6 h-6" />} name="Thyroid Panel" color="var(--accent-cyan)" />
-            <TestTypeCard icon={<Pill className="w-6 h-6" />} name="Vitamin Tests" color="var(--accent-green)" />
-            <TestTypeCard icon={<Microscope className="w-6 h-6" />} name="Full Body Checkup" color="var(--accent-purple)" />
+            <TestTypeCard icon={<Stethoscope className="w-6 h-6" />} name="CRP / Inflammation" color="var(--accent-cyan)" />
+            <TestTypeCard icon={<Pill className="w-6 h-6" />} name="Vitamin D / B12" color="var(--accent-green)" />
+            <TestTypeCard icon={<Microscope className="w-6 h-6" />} name="Infectious Screens" color="var(--accent-purple)" />
           </div>
 
           {/* Biomarker Tag Cloud */}
           <div className="mt-8 flex flex-wrap justify-center gap-2">
-            {['Glucose', 'Cholesterol', 'HDL', 'LDL', 'Triglycerides', 'Hemoglobin', 'TSH', 'Vitamin D', 'B12', 'Iron', 'WBC', 'RBC', 'Platelets', 'HbA1c', 'T3', 'T4'].map(tag => (
+            {['Fasting Glucose', 'HbA1c', 'Total Cholesterol', 'HDL', 'LDL', 'Triglycerides', 'Hemoglobin', 'WBC', 'RBC', 'Platelets', 'CRP', 'Vitamin D', 'Vitamin B12', 'Dengue NS1', 'Typhi Dot'].map(tag => (
               <span key={tag} className="px-3 py-1 rounded-full text-xs font-medium border border-[var(--border-color)] text-[var(--text-muted)] bg-[var(--bg-card)]">
                 {tag}
               </span>
@@ -112,7 +112,7 @@ export default function Home() {
               </div>
               <div>
                 <h2 className="text-lg font-semibold text-[var(--text-primary)]">Upload Your Lab Report</h2>
-                <p className="text-sm text-[var(--text-muted)]">PDF, JPG, or PNG — Max 5MB</p>
+                <p className="text-sm text-[var(--text-muted)]">Text-based PDF only — Max 5MB</p>
               </div>
             </div>
             <UploadDropzone />
@@ -129,12 +129,12 @@ export default function Home() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            <FeatureCard icon={<Activity className="w-5 h-5" />} title="50+ Biomarkers" description="Track cholesterol, HbA1c, Vitamin D, liver enzymes, thyroid hormones, and 50+ biomarkers." color="var(--accent-green)" />
+            <FeatureCard icon={<Activity className="w-5 h-5" />} title="30+ Supported Markers" description="Track CBC markers, lipids, HbA1c, fasting glucose, CRP, vitamin D, vitamin B12, and select infectious screens." color="var(--accent-green)" />
             <FeatureCard icon={<Zap className="w-5 h-5" />} title="Instant Analysis" description="AI extracts and classifies every result in under 10 seconds." color="var(--accent-purple)" />
             <FeatureCard icon={<BarChart3 className="w-5 h-5" />} title="Visual Dashboard" description="Color-coded risk cards, lipid charts, blood sugar gauges, and trend visualizations." color="var(--accent-cyan)" />
             <FeatureCard icon={<ShieldCheck className="w-5 h-5" />} title="Privacy First" description="Reports are processed securely. Data is encrypted and never shared with third parties." color="var(--accent-blue)" />
             <FeatureCard icon={<Brain className="w-5 h-5" />} title="Smart Insights" description="AI-generated explanations of your results with actionable lifestyle recommendations." color="var(--accent-purple)" />
-            <FeatureCard icon={<FileText className="w-5 h-5" />} title="Any Lab Format" description="Upload PDFs from any lab worldwide, or snap a photo of your printed report." color="var(--accent-green)" />
+            <FeatureCard icon={<FileText className="w-5 h-5" />} title="Structured PDF Reports" description="Works best with text-based PDF exports from lab portals or hospital systems." color="var(--accent-green)" />
           </div>
 
           {/* Trust Badges */}

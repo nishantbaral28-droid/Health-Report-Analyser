@@ -20,6 +20,80 @@ export interface BiomarkerReference {
   highRiskNote?: string;
 }
 
+const UNIT_ALIASES: Record<string, string[]> = {
+  'mg/dL': ['mg/dl'],
+  'g/dL': ['g/dl'],
+  'mg/L': ['mg/l'],
+  'ng/mL': ['ng/ml'],
+  'pg/mL': ['pg/ml'],
+  '%': ['%'],
+  'fL': ['fl'],
+  'pg': ['pg'],
+  'M/uL': ['m/ul', 'million/ul', '10^6/ul', 'x10^6/ul'],
+  'cells/cumm': ['cells/cumm', 'cells/cu.mm', 'cells/cumm.', 'cells/mm3', 'cells/mm^3', '/cumm', '/mm3', '/mm^3'],
+};
+
+function normalizeUnitText(unit: string): string {
+  return unit
+    .toLowerCase()
+    .replace(/[μµ]/g, 'u')
+    .replace(/\s+/g, '')
+    .trim();
+}
+
+function isGuidelineDrivenMarker(reference: BiomarkerReference): boolean {
+  return [
+    'Total Cholesterol',
+    'HDL Cholesterol',
+    'LDL Cholesterol',
+    'Triglycerides',
+    'Fasting Glucose',
+    'HbA1c',
+    'Vitamin D',
+    'C-Reactive Protein',
+  ].includes(reference.name);
+}
+
+function getGuidelineClinicalStatus(reference: BiomarkerReference, valueNum: number): ClinicalStatus | null {
+  if (!reference.normalRange) return null;
+
+  const { normalRange, borderlineRange } = reference;
+  const name = reference.name.toLowerCase();
+
+  if (name.includes('hdl')) {
+    if (valueNum >= 60) return 'FAVORABLE';
+    if (valueNum < normalRange.min) return 'CLINICALLY_NOTABLE';
+    return 'NORMAL';
+  }
+
+  if (name.includes('crp') || name.includes('c-reactive')) {
+    if (valueNum > normalRange.max) return 'CLINICALLY_NOTABLE';
+    return 'NORMAL';
+  }
+
+  if (!borderlineRange) {
+    if (valueNum < normalRange.min || valueNum > normalRange.max) return 'CLINICALLY_NOTABLE';
+    return 'NORMAL';
+  }
+
+  const isHighSideBorderline = borderlineRange.min >= normalRange.max;
+  const isLowSideBorderline = borderlineRange.max <= normalRange.min;
+
+  if (isHighSideBorderline) {
+    if (valueNum > borderlineRange.max) return 'CLINICALLY_NOTABLE';
+    if (valueNum >= borderlineRange.min) return 'BORDERLINE';
+    return 'NORMAL';
+  }
+
+  if (isLowSideBorderline) {
+    if (valueNum < borderlineRange.min) return 'CLINICALLY_NOTABLE';
+    if (valueNum <= borderlineRange.max) return 'BORDERLINE';
+    return 'NORMAL';
+  }
+
+  return null;
+}
+
 export const BIOMARKER_REFERENCES: BiomarkerReference[] = [
   // ── Lipid Panel ──
   {
@@ -265,6 +339,20 @@ export function getReference(rawName: string): BiomarkerReference | undefined {
   });
 }
 
+export function isCompatibleUnit(
+  extractedUnit: string | null | undefined,
+  expectedUnit: string,
+  subtype: BiomarkerSubtype
+): boolean {
+  if (subtype === 'qualitative') return true;
+
+  const normalizedExtracted = normalizeUnitText(extractedUnit || '');
+  if (!normalizedExtracted) return true;
+
+  const acceptedUnits = UNIT_ALIASES[expectedUnit] || [normalizeUnitText(expectedUnit)];
+  return acceptedUnits.includes(normalizedExtracted);
+}
+
 /**
  * Safely computes the clinical flag based on strict arithmetic and qualitative rules.
  * Never guesses an unknown value.
@@ -319,15 +407,20 @@ export function computeFlag(
  * Applies biomarker-specific overrides to raw numeric deviations.
  */
 export function applyClinicalRules(
-  canonicalName: string,
+  reference: BiomarkerReference,
   numericDb: NumericStatus,
   baseClinical: ClinicalStatus,
   valueNum: number | null
 ): ClinicalStatus {
   if (baseClinical === 'UNVERIFIED') return 'UNVERIFIED';
+  if (valueNum !== null && isGuidelineDrivenMarker(reference)) {
+    const guidelineStatus = getGuidelineClinicalStatus(reference, valueNum);
+    if (guidelineStatus) return guidelineStatus;
+  }
+
   if (numericDb === 'WITHIN_RANGE') return 'NORMAL';
-  
-  const name = canonicalName.toLowerCase();
+
+  const name = reference.name.toLowerCase();
   
   // HDL Logic
   if (name.includes('hdl')) {
@@ -387,7 +480,28 @@ export function getDirectionalNote(
   }
   
   if (clinicalStatus === 'FAVORABLE') {
-    return 'Value is outside the numeric threshold but is generally considered clinically favorable or protective.';
+    return 'Value is in a clinically favorable or protective range.';
+  }
+
+  if (clinicalStatus === 'BORDERLINE') {
+    if (name.includes('hba1c') || name.includes('a1c')) return 'Value sits in a borderline blood sugar range that is worth monitoring early.';
+    if (name.includes('glucose')) return 'Value is in a borderline fasting sugar range that may merit follow-up testing.';
+    if (name.includes('cholesterol') && !name.includes('hdl') && !name.includes('ldl')) return 'Value is in a borderline cholesterol range and is worth tracking over time.';
+    if (name.includes('ldl')) return 'LDL is in a borderline range and is worth improving with diet, activity, and follow-up testing.';
+    if (name.includes('triglyceride')) return 'Triglycerides are in a borderline range and may reflect metabolic strain or diet quality.';
+    if (name.includes('vitamin d')) return 'Vitamin D is slightly below the preferred range and may merit follow-up with your clinician.';
+    return 'Value sits just outside the preferred threshold and is worth monitoring.';
+  }
+
+  if (clinicalStatus === 'CLINICALLY_NOTABLE' && numericStatus === 'WITHIN_RANGE') {
+    if (name.includes('hba1c') || name.includes('a1c')) return 'HbA1c is in a clinically elevated range used for long-term blood sugar risk assessment.';
+    if (name.includes('glucose')) return 'Fasting glucose is in a clinically elevated range and should be reviewed with a clinician.';
+    if (name.includes('cholesterol') && !name.includes('hdl') && !name.includes('ldl')) return 'Total cholesterol is in a clinically elevated range associated with higher cardiovascular risk.';
+    if (name.includes('hdl')) return 'HDL is below the protective range typically used in cardiovascular risk assessment.';
+    if (name.includes('ldl')) return 'LDL is in a clinically elevated range associated with higher cardiovascular risk.';
+    if (name.includes('triglyceride')) return 'Triglycerides are in a clinically elevated range and can reflect metabolic strain.';
+    if (name.includes('vitamin d')) return 'Vitamin D is in a deficient range and may affect bone health, energy, and immunity.';
+    if (name.includes('crp') || name.includes('c-reactive')) return 'CRP is in a clinically elevated range associated with inflammation or infection.';
   }
 
   if (numericStatus === 'BELOW_RANGE') {

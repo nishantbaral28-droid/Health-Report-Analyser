@@ -36,7 +36,7 @@ export default function HeroVisual() {
         {/* Small data labels */}
         <text x="130" y="65" fill="#a855f7" fontSize="10" textAnchor="middle" fontFamily="monospace" opacity="0.7">HDL: 55</text>
         <text x="270" y="65" fill="#3b82f6" fontSize="10" textAnchor="middle" fontFamily="monospace" opacity="0.7">A1c: 5.2%</text>
-        <text x="410" y="65" fill="#06b6d4" fontSize="10" textAnchor="middle" fontFamily="monospace" opacity="0.7">TSH: 2.1</text>
+        <text x="410" y="65" fill="#06b6d4" fontSize="10" textAnchor="middle" fontFamily="monospace" opacity="0.7">CRP: 0.8</text>
 
         {/* Decorative molecule/DNA circles */}
         <circle cx="80" cy="60" r="20" fill="url(#circle-gradient)" />
