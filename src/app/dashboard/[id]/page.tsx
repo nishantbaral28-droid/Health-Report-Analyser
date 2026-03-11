@@ -309,7 +309,7 @@ export default function DashboardPage() {
                 <TrendingUp className="w-5 h-5 text-[var(--accent-purple)]" />
                 <h2 className="text-lg font-bold text-white tracking-tight">Cardiovascular Snapshot</h2>
               </div>
-              <LipidChart total={cholesterol} hdl={hdl} ldl={ldl} triglycerides={triglycerides} />
+              <LipidChart cholesterol={cholesterol} hdl={hdl} ldl={ldl} triglycerides={triglycerides} />
             </div>
           )}
 
