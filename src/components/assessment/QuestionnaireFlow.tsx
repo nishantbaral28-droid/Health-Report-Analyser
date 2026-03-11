@@ -74,6 +74,8 @@ export default function QuestionnaireFlow() {
       if (data?.session_id) {
         // Route to the dashboard with the session ID
         router.push(`/assessment/results?id=${data.session_id}`);
+      } else if (data?.fallback_payload) {
+        router.push(`/assessment/results?data=${encodeURIComponent(data.fallback_payload)}`);
       } else {
         throw new Error(data.error || 'No session created');
       }

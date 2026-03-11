@@ -20,16 +20,39 @@ async function getSession(id: string) {
   return data;
 }
 
-export default async function AssessmentResultsPage(props: { searchParams: Promise<{ id: string }> }) {
+function decodeFallbackPayload(payload: string): { computed_scores: AssessmentScores } | null {
+  try {
+    const decoded = Buffer.from(payload, 'base64url').toString('utf8');
+    return JSON.parse(decoded);
+  } catch {
+    return null;
+  }
+}
+
+export default async function AssessmentResultsPage(props: { searchParams: Promise<{ id?: string; data?: string }> }) {
   const searchParams = await props.searchParams;
   const id = searchParams.id;
+  const fallbackData = searchParams.data;
 
-  if (!id) return notFound();
+  if (!id && !fallbackData) return notFound();
 
-  const session = await getSession(id);
-  if (!session) return notFound();
+  let scores: AssessmentScores | null = null;
 
-  const scores = session.computed_scores as AssessmentScores;
+  if (id) {
+    const session = await getSession(id);
+    if (session) {
+      scores = session.computed_scores as AssessmentScores;
+    }
+  }
+
+  if (!scores && fallbackData) {
+    const decoded = decodeFallbackPayload(fallbackData);
+    if (decoded?.computed_scores) {
+      scores = decoded.computed_scores;
+    }
+  }
+
+  if (!scores) return notFound();
 
   return (
     <main className="min-h-screen bg-[var(--bg-base)] pb-20 pt-10 px-4 sm:px-6 relative overflow-hidden">

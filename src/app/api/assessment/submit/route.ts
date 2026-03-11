@@ -2,6 +2,10 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 import { calculateAssessmentScores } from '@/lib/assessment-scoring';
 
+function encodeFallbackPayload(computed_scores: unknown) {
+  return Buffer.from(JSON.stringify({ computed_scores }), 'utf8').toString('base64url');
+}
+
 export async function POST(req: Request) {
   try {
     const { answers } = await req.json();
@@ -10,10 +14,20 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Answers are required' }, { status: 400 });
     }
 
-    const supabase = await createClient();
-    
     // Compute server-side scores securely
     const computed_scores = calculateAssessmentScores(answers);
+    const fallback_payload = encodeFallbackPayload(computed_scores);
+
+    let supabase;
+    try {
+      supabase = await createClient();
+    } catch (error) {
+      console.error('Supabase Client Error:', error);
+      return NextResponse.json({
+        session_id: null,
+        fallback_payload,
+      });
+    }
 
     // Get current user if available to link session
     const { data: { session } } = await supabase.auth.getSession();
@@ -34,13 +48,13 @@ export async function POST(req: Request) {
 
     if (error) {
       console.error('Supabase Insert Error:', error.message);
-      return NextResponse.json({ 
-        success: false,
-        error: 'Database operation failed'
-      }, { status: 500 });
+      return NextResponse.json({
+        session_id: null,
+        fallback_payload,
+      });
     }
 
-    return NextResponse.json({ session_id: data.id });
+    return NextResponse.json({ session_id: data.id, fallback_payload });
     
   } catch (error) {
     console.error('Assessment Submission Error:', error);
