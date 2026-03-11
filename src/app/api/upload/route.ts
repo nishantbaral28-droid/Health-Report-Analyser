@@ -9,6 +9,7 @@ import {
   getDirectionalNote,
   getReference,
   isCompatibleUnit,
+  type BiomarkerReference,
   type NumericStatus,
   type ClinicalStatus
 } from '@/lib/biomarkers';
@@ -65,6 +66,12 @@ const extractionSchema = z.object({
   recommendations: z.array(z.string()).describe('Actionable recommendations based purely on factual findings. No medical diagnosis.'),
 });
 
+const transcriptionSchema = z.object({
+  lines: z.array(z.string()).max(400).describe('Visible report lines or table rows transcribed from the file.'),
+});
+
+type ExtractionBiomarker = z.infer<typeof extractionSchema>['biomarkers'][number];
+
 async function extractPdfText(buffer: Buffer): Promise<string> {
   try {
     const PDFParser = require('pdf2json');
@@ -73,12 +80,18 @@ async function extractPdfText(buffer: Buffer): Promise<string> {
     const extractedText = await new Promise<string>((resolve, reject) => {
       pdfParser.on('pdfParser_dataError', (errData: any) => reject(errData.parserError));
       pdfParser.on('pdfParser_dataReady', () => {
-        resolve(pdfParser.getRawTextContent().replace(/\\r\\n|\\r|\\n/g, '\n'));
+        resolve(pdfParser.getRawTextContent());
       });
       pdfParser.parseBuffer(buffer);
     });
 
-    return extractedText.replace(/\s+/g, ' ').trim();
+    return extractedText
+      .replace(/\\r\\n|\\r|\\n/g, '\n')
+      .replace(/\r\n|\r/g, '\n')
+      .split('\n')
+      .map((line) => line.replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+      .join('\n');
   } catch (error: any) {
     console.warn('PDF text assist unavailable:', error?.message || error);
     return '';
@@ -126,7 +139,8 @@ Populate confidence_score from 0 to 1 based on:
 - 0.15 explicit unit
 - 0.15 explicit reference range
 - 0.10 clear section mapping
-8. OUTPUT ONLY SUPPORTED BIOMARKERS from the supported list above. Ignore unsupported rows instead of guessing.
+8. EXTRACT EVERY LAB ROW YOU CAN CLEARLY READ, even if you are not certain it belongs to the supported set. If a row is unsupported, copy the visible raw_name and use the same string as canonical_name. The backend will filter supported markers later.
+9. If a row is readable but some fields are missing, still emit the row with nulls rather than dropping it entirely.
 
 FILE CONTEXT:
 - filename: ${fileName}
@@ -135,6 +149,261 @@ FILE CONTEXT:
 ${supplementalText ? `SUPPLEMENTAL OCR TEXT FROM PDF PARSER:
 ${supplementalText}
 ` : 'No supplemental OCR text available. Use the attached file only.'}`;
+}
+
+function buildTranscriptionPrompt({
+  fileName,
+  fileType,
+  extractedText,
+}: {
+  fileName: string;
+  fileType: string;
+  extractedText?: string;
+}) {
+  const supplementalText = extractedText ? extractedText.slice(0, 12000) : '';
+
+  return `You are transcribing a lab report for structured biomarker recovery.
+
+Read the ATTACHED FILE and return only visible report lines that look like biomarker rows, including:
+- test name
+- result value
+- unit
+- reference range
+- or qualitative result such as positive / negative
+
+Rules:
+- one row per line
+- keep numbers and units exactly as shown
+- do not summarize
+- do not diagnose
+- include partial rows if they still show a visible biomarker result
+- prioritize rows related to these supported markers when visible:
+${SUPPORTED_CANONICAL_MARKERS}
+
+File:
+- filename: ${fileName}
+- type: ${fileType}
+
+${supplementalText ? `Supplemental OCR helper text:
+${supplementalText}` : 'No supplemental OCR helper text available.'}`;
+}
+
+function buildFileContent(buffer: Buffer, file: File, prompt: string) {
+  if (file.type === 'application/pdf') {
+    return [
+      { type: 'text' as const, text: prompt },
+      { type: 'file' as const, data: buffer, mediaType: file.type },
+    ];
+  }
+
+  return [
+    { type: 'text' as const, text: prompt },
+    { type: 'image' as const, image: buffer },
+  ];
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+}
+
+function normalizeLine(line: string) {
+  return line.replace(/\s+/g, ' ').trim();
+}
+
+function findReferenceMatch(line: string): { reference: BiomarkerReference; label: string; start: number; end: number } | null {
+  let bestMatch: { reference: BiomarkerReference; label: string; start: number; end: number } | null = null;
+
+  for (const reference of BIOMARKER_REFERENCES) {
+    const labels = [reference.name, ...reference.synonyms].sort((a, b) => b.length - a.length);
+
+    for (const label of labels) {
+      const regex = new RegExp(`(^|[^a-z0-9])(${escapeRegExp(label)})(?=[^a-z0-9]|$)`, 'i');
+      const match = regex.exec(line);
+
+      if (!match) continue;
+
+      const start = (match.index ?? 0) + match[1].length;
+      const end = start + match[2].length;
+
+      if (!bestMatch || label.length > bestMatch.label.length) {
+        bestMatch = { reference, label: match[2], start, end };
+      }
+    }
+  }
+
+  return bestMatch;
+}
+
+function parseQualitativeValue(text: string): string | null {
+  const match = text.match(/\b(non-reactive|not detected|negative|positive|reactive|detected|equivocal|borderline|indeterminate)\b/i);
+  return match ? match[1].toUpperCase() : null;
+}
+
+function extractNumberTokens(text: string) {
+  return Array.from(text.matchAll(/[-+]?\d+(?:\.\d+)?/g)).map((match) => ({
+    raw: match[0],
+    value: Number.parseFloat(match[0]),
+    index: match.index ?? 0,
+  }));
+}
+
+function inferUnit(text: string, valueToken: { raw: string; index: number }) {
+  const afterValue = text.slice(valueToken.index + valueToken.raw.length);
+  const unitMatch = afterValue.match(/^\s*([%A-Za-zμµ][A-Za-z0-9/.\-^%μµ]*)/);
+  return unitMatch ? unitMatch[1].trim() : '';
+}
+
+function inferFlag(valueNum: number | null, refLow: number | null, refHigh: number | null, qualitative: string | null) {
+  if (qualitative) {
+    if (/NEGATIVE|NON-REACTIVE|NOT DETECTED/i.test(qualitative)) return 'NORMAL' as const;
+    if (/POSITIVE|REACTIVE|DETECTED/i.test(qualitative)) return 'HIGH' as const;
+    return 'UNKNOWN' as const;
+  }
+
+  if (valueNum === null || refLow === null || refHigh === null) return 'UNKNOWN' as const;
+  if (valueNum < refLow) return 'LOW' as const;
+  if (valueNum > refHigh) return 'HIGH' as const;
+  return 'NORMAL' as const;
+}
+
+function buildCandidateLines(text: string) {
+  const baseLines = text
+    .split('\n')
+    .map(normalizeLine)
+    .filter((line) => line.length >= 4);
+
+  const candidates = new Set<string>();
+
+  baseLines.forEach((line, index) => {
+    candidates.add(line);
+
+    const nextLine = baseLines[index + 1];
+    const lineLooksComplete = /\b\d+(?:\.\d+)?\b/.test(line) && /(?:\bnegative\b|\bpositive\b|[-–]\s*\d|\bref\b|\bnormal\b)/i.test(line);
+
+    if (nextLine && line.length < 120 && !lineLooksComplete) {
+      candidates.add(`${line} ${nextLine}`.trim());
+    }
+  });
+
+  return Array.from(candidates);
+}
+
+function buildHeuristicCandidatesFromText(text: string): ExtractionBiomarker[] {
+  if (!text.trim()) return [];
+
+  const candidates: ExtractionBiomarker[] = [];
+  const seen = new Set<string>();
+  const lines = buildCandidateLines(text);
+
+  lines.forEach((line, index) => {
+    const referenceMatch = findReferenceMatch(line);
+    if (!referenceMatch) return;
+
+    const { reference, label, start, end } = referenceMatch;
+    const trailingText = normalizeLine(line.slice(end).replace(/^[:\-–\s]+/, ''));
+    const qualitative = parseQualitativeValue(trailingText) || parseQualitativeValue(line);
+
+    let valueText = '';
+    let valueNum: number | null = null;
+    let unit = '';
+    let refLow: number | null = null;
+    let refHigh: number | null = null;
+    let refText = '';
+
+    if (qualitative) {
+      valueText = qualitative;
+    } else {
+      const numericTokens = extractNumberTokens(trailingText);
+      if (numericTokens.length === 0) return;
+
+      valueNum = numericTokens[0].value;
+      unit = inferUnit(trailingText, numericTokens[0]);
+
+      if (numericTokens.length >= 3) {
+        refLow = numericTokens[numericTokens.length - 2].value;
+        refHigh = numericTokens[numericTokens.length - 1].value;
+      } else if (reference.normalRange) {
+        refLow = reference.normalRange.min;
+        refHigh = reference.normalRange.max;
+      }
+
+      refText = refLow !== null && refHigh !== null ? `${refLow} - ${refHigh}` : '';
+      valueText = unit ? `${numericTokens[0].raw} ${unit}` : numericTokens[0].raw;
+    }
+
+    const confidenceScore = Math.min(
+      0.94,
+      0.72 +
+        (refLow !== null && refHigh !== null ? 0.1 : 0) +
+        (unit ? 0.04 : 0) +
+        (qualitative ? 0.08 : 0) +
+        (label.length >= reference.name.length ? 0.04 : 0)
+    );
+
+    const candidateKey = `${reference.name}|${valueText}|${refText}|${qualitative ?? ''}`;
+    if (seen.has(candidateKey)) return;
+    seen.add(candidateKey);
+
+    candidates.push({
+      id: `heuristic-${index}-${reference.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+      section: 'Heuristic OCR',
+      raw_name: label,
+      canonical_name: reference.name,
+      subtype: reference.subtype,
+      value_text: valueText || line,
+      value_num: valueNum,
+      unit,
+      ref_low: refLow,
+      ref_high: refHigh,
+      ref_text: refText,
+      qualitative,
+      flag: inferFlag(valueNum, refLow, refHigh, qualitative),
+      extraction_method: refLow !== null && refHigh !== null ? 'row_block' : 'heuristic',
+      source_anchor: 'OCR fallback',
+      evidence_snippet: line.slice(0, 120),
+      confidence_score: confidenceScore,
+      conflict_group_id: null,
+      needs_verification: false,
+    });
+  });
+
+  return candidates;
+}
+
+async function runVisualTranscription({
+  buffer,
+  file,
+  extractedText,
+}: {
+  buffer: Buffer;
+  file: File;
+  extractedText?: string;
+}) {
+  const model = google(process.env.GEMINI_EXTRACTION_MODEL || 'gemini-2.5-flash');
+  const prompt = buildTranscriptionPrompt({
+    fileName: file.name,
+    fileType: file.type,
+    extractedText,
+  });
+
+  const { object } = await generateObject({
+    model,
+    schema: transcriptionSchema,
+    temperature: 0,
+    providerOptions: {
+      google: {
+        mediaResolution: 'HIGH',
+      },
+    },
+    messages: [
+      {
+        role: 'user',
+        content: buildFileContent(buffer, file, prompt),
+      },
+    ],
+  });
+
+  return object.lines.map(normalizeLine).filter(Boolean);
 }
 
 async function runStructuredExtraction({
@@ -147,30 +416,21 @@ async function runStructuredExtraction({
   extractedText?: string;
 }) {
   const model = google(process.env.GEMINI_EXTRACTION_MODEL || 'gemini-2.5-flash');
-  const prompt = buildExtractionPrompt({
-    fileName: file.name,
-    fileType: file.type,
-    extractedText,
-  });
-
-  const multimodalContent =
-    file.type === 'application/pdf'
-      ? [
-          { type: 'text' as const, text: prompt },
-          { type: 'file' as const, data: buffer, mediaType: file.type },
-        ]
-      : [
-          { type: 'text' as const, text: prompt },
-          { type: 'image' as const, image: buffer },
-        ];
-
   const attempts: Array<{
     label: string;
-    content: typeof multimodalContent;
+    content: ReturnType<typeof buildFileContent> | Array<{ type: 'text'; text: string }>;
   }> = [
     {
       label: 'multimodal-primary',
-      content: multimodalContent,
+      content: buildFileContent(
+        buffer,
+        file,
+        buildExtractionPrompt({
+          fileName: file.name,
+          fileType: file.type,
+          extractedText,
+        })
+      ),
     },
   ];
 
@@ -179,6 +439,15 @@ async function runStructuredExtraction({
       label: 'pdf-text-fallback',
       content: [{ type: 'text' as const, text: buildExtractionPrompt({ fileName: file.name, fileType: file.type, extractedText }) }],
     });
+  }
+
+  const heuristicFromPdfText = buildHeuristicCandidatesFromText(extractedText || '');
+  if (heuristicFromPdfText.length > 0) {
+    return {
+      summary: 'Recovered supported biomarkers using OCR row parsing.',
+      biomarkers: heuristicFromPdfText,
+      recommendations: [],
+    };
   }
 
   let lastError: unknown;
@@ -211,6 +480,26 @@ async function runStructuredExtraction({
       console.warn(`Structured extraction attempt failed (${attempt.label}):`, error);
       lastError = error;
     }
+  }
+
+  try {
+    const transcribedLines = await runVisualTranscription({
+      buffer,
+      file,
+      extractedText,
+    });
+
+    const heuristicFromVision = buildHeuristicCandidatesFromText(transcribedLines.join('\n'));
+    if (heuristicFromVision.length > 0) {
+      return {
+        summary: 'Recovered supported biomarkers from visual transcription.',
+        biomarkers: heuristicFromVision,
+        recommendations: [],
+      };
+    }
+  } catch (error) {
+    console.warn('Visual transcription fallback failed:', error);
+    lastError = error;
   }
 
   throw lastError || new Error('Structured extraction failed.');
@@ -306,13 +595,15 @@ export async function POST(req: Request) {
 
     extraction.biomarkers.forEach((b: any) => {
       // Rule 1: Confidence Display Threshold Policy
-      // < 0.70 = Blocked completely
-      if (b.confidence_score < 0.70) {
+      const hasExplicitRange = b.ref_low !== null && b.ref_high !== null;
+      const confidenceFloor = hasExplicitRange || b.qualitative ? 0.58 : 0.68;
+
+      if (b.confidence_score < confidenceFloor) {
         blockedBiomarkers.push({ ...b, blocked_reason: 'Low Confidence Score (<0.70)' });
         return;
       }
 
-      let isConfirmatoryZone = b.confidence_score >= 0.70 && b.confidence_score < 0.88;
+      let isConfirmatoryZone = b.confidence_score >= confidenceFloor && b.confidence_score < 0.82;
 
       const rigidPanels = ['hba1c', 'total cholesterol', 'hdl cholesterol', 'ldl cholesterol', 'triglycerides', 'crp', 'c-reactive protein'];
       const isRigid = rigidPanels.some(m => b.raw_name?.toLowerCase().includes(m) || (b.canonical_name && b.canonical_name?.toLowerCase().includes(m)));
@@ -335,7 +626,7 @@ export async function POST(req: Request) {
 
       if (!ref) {
         // Unverified fallback
-        blockedBiomarkers.push({ ...b, blocked_reason: 'Cannot Verifiably Map Value to Safe Dictionary Bounds' });
+        blockedBiomarkers.push({ ...b, blocked_reason: 'Cannot verifiably map extracted row to supported biomarker dictionary' });
         return;
       }
 
