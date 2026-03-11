@@ -3,15 +3,27 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --webpack",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
   },
   "dependencies": {
+    "@ai-sdk/google": "^3.0.43",
+    "@supabase/ssr": "^0.9.0",
+    "@supabase/supabase-js": "^2.99.0",
+    "ai": "^6.0.116",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.577.0",
     "next": "16.1.6",
+    "pdf2json": "^4.0.2",
+    "pdfkit": "^0.17.2",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "react-dropzone": "^15.0.0",
+    "recharts": "^3.8.0",
+    "tailwind-merge": "^3.5.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

@@ -1,26 +1,101 @@
 @import "tailwindcss";
 
+/* ===== Dark Theme (MetaHealth Dashboard Palette) ===== */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg-primary: #0a0a0f;
+  --bg-secondary: #0f0f14;
+  --bg-card: #151520;
+  --bg-card-hover: #1e1e2e;
+
+  --text-primary: #f0f0f5;
+  --text-secondary: #9a9ab0;
+  --text-muted: #6b6b80;
+
+  --border-color: #1e1e2e;
+  --border-light: #2d2d40;
+
+  --accent-purple: #a855f7;
+  --accent-blue: #3b82f6;
+  --accent-cyan: #06b6d4;
+  --accent-green: #10b981;
+  --accent-red: #ef4444;
+
+  --gradient-primary: linear-gradient(135deg, #a855f7 0%, #3b82f6 100%);
+  --gradient-success: linear-gradient(135deg, #10b981 0%, #06b6d4 100%);
+
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.5);
+  --shadow-md: 0 4px 12px -2px rgb(0 0 0 / 0.4);
+  --shadow-lg: 0 12px 24px -4px rgb(0 0 0 / 0.4);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* Force dark background on all elements */
+html {
+  background-color: var(--bg-primary);
+  color-scheme: dark;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--bg-primary) !important;
+  color: var(--text-primary);
+  font-family: var(--font-geist-sans), 'Inter', system-ui, -apple-system, sans-serif;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100vh;
+}
+
+/* ── Surface Card ── */
+.surface-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.25s ease;
+}
+.surface-card:hover {
+  border-color: var(--border-light);
+  box-shadow: var(--shadow-md);
+}
+
+/* ── Gradient Text ── */
+.gradient-text {
+  background: var(--gradient-primary);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── Glow Effects ── */
+.glow-purple {
+  box-shadow: 0 0 30px rgba(168, 85, 247, 0.1), 0 0 80px rgba(168, 85, 247, 0.04);
+}
+.glow-blue {
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.1), 0 0 60px rgba(59, 130, 246, 0.04);
+}
+
+/* ── Animations ── */
+@keyframes float {
+  0%, 100% { transform: translateY(0px) translateX(0px); }
+  25% { transform: translateY(-20px) translateX(10px); }
+  50% { transform: translateY(-10px) translateX(-10px); }
+  75% { transform: translateY(-25px) translateX(5px); }
+}
+@keyframes pulse-slow {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.6; }
+}
+
+.float-animation { animation: float 8s ease-in-out infinite; }
+.float-animation-delay { animation: float 10s ease-in-out infinite; animation-delay: -3s; }
+.pulse-slow { animation: pulse-slow 4s ease-in-out infinite; }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-secondary); }
+::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 999px; }
+
+/* ── Override any Tailwind whitespace defaults ── */
+*, *::before, *::after {
+  border-color: var(--border-color);
 }
