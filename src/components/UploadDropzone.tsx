@@ -5,6 +5,8 @@ import { useDropzone } from 'react-dropzone';
 import { UploadCloud, FileText, CheckCircle, Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
+const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
+
 export default function UploadDropzone() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'success' | 'error'>('idle');
@@ -20,6 +22,10 @@ export default function UploadDropzone() {
     setErrorMessage('');
 
     try {
+      if (file.size > MAX_UPLOAD_BYTES) {
+        throw new Error('Please upload a PDF or image under 4MB.');
+      }
+
       const formData = new FormData();
       formData.append('file', file);
 
@@ -29,8 +35,18 @@ export default function UploadDropzone() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to upload report');
+        let message = 'Failed to upload report';
+
+        try {
+          const errorData = await response.json();
+          message = errorData.error || message;
+        } catch {
+          if (response.status === 413) {
+            message = 'This file is too large for the hosted app. Please upload a PDF or image under 4MB.';
+          }
+        }
+
+        throw new Error(message);
       }
 
       const data = await response.json();
@@ -57,12 +73,22 @@ export default function UploadDropzone() {
     }
   }, [router]);
 
+  const onDropRejected = useCallback(() => {
+    setUploadStatus('error');
+    setErrorMessage('Please upload one PDF, PNG, JPG, or WEBP file under 4MB.');
+  }, []);
+
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
+    onDropRejected,
     accept: {
       'application/pdf': ['.pdf'],
+      'image/png': ['.png'],
+      'image/jpeg': ['.jpg', '.jpeg'],
+      'image/webp': ['.webp'],
     },
     maxFiles: 1,
+    maxSize: MAX_UPLOAD_BYTES,
     disabled: isUploading || uploadStatus === 'success'
   });
 
@@ -104,7 +130,7 @@ export default function UploadDropzone() {
           ) : (
              <>
                <p className="text-base font-semibold text-[var(--text-primary)]">
-                 {isDragActive ? 'Drop your PDF here' : 'Drag & drop your lab report PDF'}
+                 {isDragActive ? 'Drop your report file here' : 'Drag & drop your lab report PDF or image'}
                </p>
                <p className="text-sm text-[var(--text-muted)]">
                  or <span className="text-[var(--accent-purple)] underline underline-offset-2">browse files</span>
@@ -115,7 +141,7 @@ export default function UploadDropzone() {
       </div>
 
       <p className="mt-3 text-center text-xs text-[var(--text-muted)]">
-        Text-based PDF exports only. Image files and scanned PDFs are not supported yet.
+        Supports PDF, PNG, JPG, and WEBP files up to 4MB. For best results, use a straight, readable export or photo that clearly shows the result and reference-range columns.
       </p>
       
       {uploadStatus === 'error' && (

@@ -3,6 +3,7 @@ import { generateObject } from 'ai';
 import { google } from '@ai-sdk/google';
 import { z } from 'zod';
 import {
+  BIOMARKER_REFERENCES,
   computeFlag,
   applyClinicalRules,
   getDirectionalNote,
@@ -11,6 +12,20 @@ import {
   type NumericStatus,
   type ClinicalStatus
 } from '@/lib/biomarkers';
+
+export const runtime = 'nodejs';
+export const maxDuration = 60;
+
+const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
+const SUPPORTED_UPLOAD_TYPES = new Set([
+  'application/pdf',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+]);
+
+const SUPPORTED_UPLOAD_LABEL = 'PDF, PNG, JPG, or WEBP';
+const SUPPORTED_CANONICAL_MARKERS = BIOMARKER_REFERENCES.map((reference) => reference.name).join(', ');
 
 // Check if AI key is configured
 function isAIConfigured(): boolean {
@@ -50,25 +65,155 @@ const extractionSchema = z.object({
   recommendations: z.array(z.string()).describe('Actionable recommendations based purely on factual findings. No medical diagnosis.'),
 });
 
-function generateDemoExtraction() {
-  return {
-    summary: 'Mock health markers generated for demo mode.',
-    biomarkers: [
-      { id: '1', section: 'CBC', raw_name: 'Neutrophils %', canonical_name: 'Neutrophils %', subtype: 'percentage', value_text: '60', value_num: 60, unit: '%', ref_low: 40, ref_high: 80, ref_text: '40 - 80', qualitative: null, flag: 'NORMAL', extraction_method: 'table_row', source_anchor: 'Page 1, Differential', evidence_snippet: 'Neutrophils 60 % 40-80', confidence_score: 0.99, conflict_group_id: null, needs_verification: false },
-      { id: '2', section: 'CBC', raw_name: 'Lymphocytes %', canonical_name: 'Lymphocytes %', subtype: 'percentage', value_text: '15', value_num: 15, unit: '%', ref_low: 20, ref_high: 40, ref_text: '20 - 40', qualitative: null, flag: 'LOW', extraction_method: 'table_row', source_anchor: 'Page 1, Differential', evidence_snippet: 'Lymphocytes 15 % 20-40', confidence_score: 0.99, conflict_group_id: null, needs_verification: false },
-      { id: '3', section: 'CBC', raw_name: 'MCV', canonical_name: 'MCV', subtype: 'panel_value', value_text: '70', value_num: 70, unit: 'fL', ref_low: 80, ref_high: 100, ref_text: '80 - 100', qualitative: null, flag: 'LOW', extraction_method: 'table_row', source_anchor: 'Page 1, Hematology', evidence_snippet: 'MCV 70 fL 80-100', confidence_score: 0.99, conflict_group_id: null, needs_verification: false },
-      { id: '4', section: 'CBC', raw_name: 'MCH', canonical_name: 'MCH', subtype: 'panel_value', value_text: '24', value_num: 24, unit: 'pg', ref_low: 27, ref_high: 33, ref_text: '27 - 33', qualitative: null, flag: 'LOW', extraction_method: 'table_row', source_anchor: 'Page 1, Hematology', evidence_snippet: 'MCH 24 pg 27-33', confidence_score: 0.98, conflict_group_id: null, needs_verification: false },
-      { id: '5', section: 'CBC', raw_name: 'Monocytes %', canonical_name: 'Monocytes %', subtype: 'percentage', value_text: '12', value_num: 12, unit: '%', ref_low: 2, ref_high: 10, ref_text: '2 - 10', qualitative: null, flag: 'HIGH', extraction_method: 'table_row', source_anchor: 'Page 1, Differential', evidence_snippet: 'Monocytes 12 % 2-10', confidence_score: 0.99, conflict_group_id: null, needs_verification: false },
-      { id: '6', section: 'CBC', raw_name: 'Eosinophils %', canonical_name: 'Eosinophils %', subtype: 'percentage', value_text: '0.5', value_num: 0.5, unit: '%', ref_low: 1, ref_high: 6, ref_text: '1 - 6', qualitative: null, flag: 'LOW', extraction_method: 'table_row', source_anchor: 'Page 1, Differential', evidence_snippet: 'Eosinophils 0.5 % 1-6', confidence_score: 0.99, conflict_group_id: null, needs_verification: false },
-      { id: '7', section: 'CBC', raw_name: 'Basophils %', canonical_name: 'Basophils %', subtype: 'percentage', value_text: '0', value_num: 0, unit: '%', ref_low: 0, ref_high: 2, ref_text: '0 - 2', qualitative: null, flag: 'NORMAL', extraction_method: 'table_row', source_anchor: 'Page 1, Differential', evidence_snippet: 'Basophils 0 % 0-2', confidence_score: 0.99, conflict_group_id: null, needs_verification: false },
-      { id: '8', section: 'CBC', raw_name: 'Platelets', canonical_name: 'Platelets', subtype: 'absolute_count', value_text: '250000', value_num: 250000, unit: 'cells/cumm', ref_low: 150000, ref_high: 450000, ref_text: '150k - 450k', qualitative: null, flag: 'NORMAL', extraction_method: 'table_row', source_anchor: 'Page 1, Hematology', evidence_snippet: 'Platelets 250000 150k-450k', confidence_score: 0.99, conflict_group_id: null, needs_verification: false },
-      { id: '8a',section: 'CBC', raw_name: 'Absolute Neutrophil Count', canonical_name: 'Absolute Neutrophil Count', subtype: 'absolute_count', value_text: '6500', value_num: 6500, unit: 'cells/cumm', ref_low: 2000, ref_high: 7000, ref_text: '2000 - 7000', qualitative: null, flag: 'NORMAL', extraction_method: 'table_row', source_anchor: 'Page 1, Hematology', evidence_snippet: 'ANC 6500', confidence_score: 0.99, conflict_group_id: null, needs_verification: false },
-      { id: '9', section: 'Infectious', raw_name: 'Dengue NS1 Antigen', canonical_name: 'Dengue NS1 Antigen', subtype: 'qualitative', value_text: 'NEGATIVE', value_num: null, unit: '', ref_low: null, ref_high: null, ref_text: 'Negative', qualitative: 'NEGATIVE', flag: 'NORMAL', extraction_method: 'table_row', source_anchor: 'Page 2, Serology', evidence_snippet: 'Dengue NS1 Antigen Negative', confidence_score: 0.99, conflict_group_id: null, needs_verification: false },
-      { id: '10', section: 'Infectious', raw_name: 'Dengue IgM', canonical_name: 'Dengue IgM', subtype: 'qualitative', value_text: 'NEGATIVE', value_num: null, unit: '', ref_low: null, ref_high: null, ref_text: 'Negative', qualitative: 'NEGATIVE', flag: 'NORMAL', extraction_method: 'table_row', source_anchor: 'Page 2, Serology', evidence_snippet: 'Dengue IgM Negative', confidence_score: 0.99, conflict_group_id: null, needs_verification: false },
-      { id: '11', section: 'Infectious', raw_name: 'Typhi Dot', canonical_name: 'Typhi Dot', subtype: 'qualitative', value_text: 'POSITIVE', value_num: null, unit: '', ref_low: null, ref_high: null, ref_text: 'Negative', qualitative: 'POSITIVE', flag: 'HIGH', extraction_method: 'table_row', source_anchor: 'Page 2, Serology', evidence_snippet: 'Typhi Dot POSITIVE', confidence_score: 0.99, conflict_group_id: null, needs_verification: false },
-    ],
-    recommendations: ['Demo mode active.'],
-  };
+async function extractPdfText(buffer: Buffer): Promise<string> {
+  try {
+    const PDFParser = require('pdf2json');
+    const pdfParser = new PDFParser(null, 1);
+
+    const extractedText = await new Promise<string>((resolve, reject) => {
+      pdfParser.on('pdfParser_dataError', (errData: any) => reject(errData.parserError));
+      pdfParser.on('pdfParser_dataReady', () => {
+        resolve(pdfParser.getRawTextContent().replace(/\\r\\n|\\r|\\n/g, '\n'));
+      });
+      pdfParser.parseBuffer(buffer);
+    });
+
+    return extractedText.replace(/\s+/g, ' ').trim();
+  } catch (error: any) {
+    console.warn('PDF text assist unavailable:', error?.message || error);
+    return '';
+  }
+}
+
+function buildExtractionPrompt({
+  fileName,
+  fileType,
+  extractedText,
+}: {
+  fileName: string;
+  fileType: string;
+  extractedText?: string;
+}) {
+  const supplementalText = extractedText ? extractedText.slice(0, 24000) : '';
+
+  return `You are an expert medical report OCR parser and safety-first biomarker extraction engine.
+
+Analyze the ATTACHED REPORT FILE directly. It may be:
+- a text-based PDF,
+- a scanned PDF,
+- or a lab report image/photo.
+
+Use the attached file as the source of truth. If supplemental OCR text is included below, use it only as a helper. If the file and supplemental text conflict, trust the visual file.
+
+SUPPORTED CANONICAL BIOMARKERS:
+${SUPPORTED_CANONICAL_MARKERS}
+
+CRITICAL SAFETY RULES:
+1. STRICT VISUAL EXTRACTION ONLY: Every extracted value must be visibly present in the attached file. Never invent values, units, ranges, or markers.
+2. TABLE-FIRST PARSING: If results appear in a table, extract test name, result, unit, and range from the same row only.
+3. LAYOUT AMBIGUITY DETECTION: If two nearby rows could share the same value because of bleed, set the same conflict_group_id and needs_verification=true.
+4. QUALITATIVE SAFETY: For qualitative tests like POSITIVE/NEGATIVE, only assign the result if it is clearly aligned with the correct test row.
+5. REFERENCE RANGE SAFETY: If the report does not show a reference range, leave ref_low/ref_high null. Never synthesize a range.
+6. SUBTYPE SAFETY:
+- percentage results stay percentage
+- absolute counts stay absolute_count
+- qualitative stays qualitative
+- panel_value is for direct numeric analytes like glucose, HbA1c, MCV, cholesterol
+7. CONFIDENCE SCORE:
+Populate confidence_score from 0 to 1 based on:
+- 0.35 exact row-label match
+- 0.25 stable row structure
+- 0.15 explicit unit
+- 0.15 explicit reference range
+- 0.10 clear section mapping
+8. OUTPUT ONLY SUPPORTED BIOMARKERS from the supported list above. Ignore unsupported rows instead of guessing.
+
+FILE CONTEXT:
+- filename: ${fileName}
+- media type: ${fileType}
+
+${supplementalText ? `SUPPLEMENTAL OCR TEXT FROM PDF PARSER:
+${supplementalText}
+` : 'No supplemental OCR text available. Use the attached file only.'}`;
+}
+
+async function runStructuredExtraction({
+  buffer,
+  file,
+  extractedText,
+}: {
+  buffer: Buffer;
+  file: File;
+  extractedText?: string;
+}) {
+  const model = google(process.env.GEMINI_EXTRACTION_MODEL || 'gemini-2.5-flash');
+  const prompt = buildExtractionPrompt({
+    fileName: file.name,
+    fileType: file.type,
+    extractedText,
+  });
+
+  const multimodalContent =
+    file.type === 'application/pdf'
+      ? [
+          { type: 'text' as const, text: prompt },
+          { type: 'file' as const, data: buffer, mediaType: file.type },
+        ]
+      : [
+          { type: 'text' as const, text: prompt },
+          { type: 'image' as const, image: buffer },
+        ];
+
+  const attempts: Array<{
+    label: string;
+    content: typeof multimodalContent;
+  }> = [
+    {
+      label: 'multimodal-primary',
+      content: multimodalContent,
+    },
+  ];
+
+  if (extractedText && extractedText.length >= 80) {
+    attempts.push({
+      label: 'pdf-text-fallback',
+      content: [{ type: 'text' as const, text: buildExtractionPrompt({ fileName: file.name, fileType: file.type, extractedText }) }],
+    });
+  }
+
+  let lastError: unknown;
+
+  for (const attempt of attempts) {
+    try {
+      const { object } = await generateObject({
+        model,
+        schema: extractionSchema,
+        temperature: 0,
+        providerOptions: {
+          google: {
+            mediaResolution: 'HIGH',
+          },
+        },
+        messages: [
+          {
+            role: 'user',
+            content: attempt.content,
+          },
+        ],
+      });
+
+      if (object?.biomarkers?.length) {
+        return object;
+      }
+
+      lastError = new Error(`No biomarkers extracted during ${attempt.label}.`);
+    } catch (error) {
+      console.warn(`Structured extraction attempt failed (${attempt.label}):`, error);
+      lastError = error;
+    }
+  }
+
+  throw lastError || new Error('Structured extraction failed.');
 }
 
 export async function POST(req: Request) {
@@ -81,14 +226,13 @@ export async function POST(req: Request) {
     }
 
     // Validate file type
-    const allowedTypes = ['application/pdf'];
-    if (!allowedTypes.includes(file.type)) {
-      return NextResponse.json({ error: 'Please upload a text-based PDF report. Image and scanned report uploads are not supported yet.' }, { status: 400 });
+    if (!SUPPORTED_UPLOAD_TYPES.has(file.type)) {
+      return NextResponse.json({ error: `Please upload a supported report file (${SUPPORTED_UPLOAD_LABEL}).` }, { status: 400 });
     }
 
-    // Validate file size (5MB max)
-    if (file.size > 5 * 1024 * 1024) {
-      return NextResponse.json({ error: 'File too large. Maximum size is 5MB.' }, { status: 400 });
+    // Keep uploads under the hosted request-size limit on Vercel.
+    if (file.size > MAX_UPLOAD_BYTES) {
+      return NextResponse.json({ error: 'File too large. Please upload a PDF or image under 4MB.' }, { status: 400 });
     }
 
     // 1. Optionally upload to Supabase Storage
@@ -125,91 +269,24 @@ export async function POST(req: Request) {
     }
 
     try {
-      const googleModel = google('gemini-2.5-flash');
-
       const buffer = Buffer.from(await file.arrayBuffer());
+      const extractedText = file.type === 'application/pdf' ? await extractPdfText(buffer) : '';
 
-      // Parse PDF text locally to bypass AI SDK Buffer schema errors
-      let extractedText = '';
-      const rawText = buffer.toString('utf8');
-      if (rawText.startsWith('%PDF-')) {
-        try {
-          const PDFParser = require('pdf2json');
-          const pdfParser = new PDFParser(null, 1);
-
-          extractedText = await new Promise((resolve, reject) => {
-            pdfParser.on('pdfParser_dataError', (errData: any) => reject(errData.parserError));
-            pdfParser.on('pdfParser_dataReady', () => {
-              resolve(pdfParser.getRawTextContent().replace(/\\r\\n|\\r|\\n/g, '\n'));
-            });
-            pdfParser.parseBuffer(buffer);
-          });
-        } catch (pdfErr: any) {
-          console.warn('PDF parsing failed:', pdfErr);
-          return NextResponse.json({
-            error: 'This PDF could not be parsed as structured text. Please upload a text-based PDF export from the lab portal.'
-          }, { status: 400 });
-        }
-      } else {
-        return NextResponse.json({
-          error: 'Only text-based PDF reports are supported right now.'
-        }, { status: 400 });
-      }
-
-      const normalizedExtractedText = extractedText.replace(/\s+/g, ' ').trim();
-      if (normalizedExtractedText.length < 80 || !/[a-zA-Z]{3,}/.test(normalizedExtractedText)) {
-        return NextResponse.json({
-          error: 'This looks like a scanned or image-based PDF. Please upload a text-based PDF export from the lab portal.'
-        }, { status: 400 });
-      }
-
-      const { object } = await generateObject({
-        model: googleModel,
-        schema: extractionSchema,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: `You are an expert OCR parser and clinical intelligence safety validation engine.
-CRITICAL SAFETY RULES:
-1. STRICT OCR ONLY: Extracted values must physically exist in the document text exactly as you extract them. Zero hallucinations.
-2. TABLE-FIRST PARSING (CRITICAL): If data looks tabular, you MUST extract (TestName, Result, Unit, Range) from the SAME ROW. Disallow token-nearness across rows.
-3. CONFLICT DETECTOR: If a layout is ambiguous (e.g., the same numeric value "31.25" could belong to Dengue NS1 or Typhi Dot because of column bleeding), assign the SAME \`conflict_group_id\` (e.g., "conflict-1") to BOTH candidates and set \`needs_verification\` to true.
-4. MISPRINT DETECTION: If you see qualitative labels like "NEGATIVE" sitting next to a test named "Typhi Dot", this is a layout bleed. Mark \`needs_verification\` true.
-5. NO SYNTHETIC VALUES: Never invent a value, a unit, or a range that isn't written on the page.
-6. SUBTYPES (CRITICAL):
-- Explicitly map each test to 'percentage', 'absolute_count', 'qualitative', 'ratio', or 'panel_value'.
-- DIFFERENTIAL WBC: "Neutrophils %" (subtype: percentage, unit: %) MUST NOT BE MERGED WITH "Neutrophils Abs" (subtype: absolute_count, unit: cells/cumm).
-- If a row text contains "Eosinophils" and a % sign, its subtype is percentage. Do not cross-assign ranges.
-7. ROW CONSISTENCY SCORE:
-Populate \`confidence_score\` mathematically (0.0 to 1.0) based on:
-- 0.35 if row label matches exactly.
-- 0.25 if table structure is unbroken text string.
-- 0.15 if unit is explicitly present.
-- 0.15 if reference bounds exist.
-- 0.10 if section mapping seems solid.
-
-=== RAW ADJACENT TEXT EXTRACTED FROM REPORT ===
-${extractedText}
-===============================================`
-              }
-            ]
-          }
-        ]
+      extraction = await runStructuredExtraction({
+        buffer,
+        file,
+        extractedText,
       });
-      extraction = object;
     } catch (aiError: any) {
       console.warn('AI extraction failed:', aiError.message);
       return NextResponse.json({
-        error: 'We could not extract structured biomarkers from this report. Please try another text-based PDF export.'
+        error: 'We could not confidently read supported biomarkers from this file. Try a clearer PDF export or a straight, readable photo that includes the result and reference range columns.'
       }, { status: 422 });
     }
 
     if (!extraction?.biomarkers?.length) {
       return NextResponse.json({
-        error: 'No supported biomarkers were detected in this PDF.'
+        error: 'No supported biomarkers were detected in this file.'
       }, { status: 422 });
     }
 
@@ -361,14 +438,14 @@ ${extractedText}
 
     if (verifiedBiomarkers.length === 0) {
       return NextResponse.json({
-        error: 'We could not verify any supported biomarkers from this PDF. Please upload a clearer text-based lab export.'
+        error: 'We could not verify any supported biomarkers from this file. Please upload a clearer export or report image.'
       }, { status: 422 });
     }
 
     const trustedBiomarkerCount = verifiedBiomarkers.filter((biomarker) => biomarker.clinicalStatus !== 'UNVERIFIED').length;
     if (trustedBiomarkerCount === 0) {
       return NextResponse.json({
-        error: 'The extracted rows were too uncertain to build a reliable dashboard. Please upload a clearer text-based PDF export.'
+        error: 'The extracted rows were too uncertain to build a reliable dashboard. Please upload a clearer export or report image with readable rows and ranges.'
       }, { status: 422 });
     }
 
