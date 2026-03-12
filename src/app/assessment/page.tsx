@@ -1,9 +1,9 @@
 import QuestionnaireFlow from '@/components/assessment/QuestionnaireFlow';
-import { Activity } from 'lucide-react';
+import { Activity, Sparkles } from 'lucide-react';
 
 export const metadata = {
-  title: 'Health Risk Assessment | MetaHealth',
-  description: 'A 2-minute lifestyle and health screening to generate your personalized wellness snapshot.',
+  title: 'Check Your Score | MetaHealth',
+  description: 'Choose a focused questionnaire to check your Cortisol or Diabetes score in a few minutes.',
 };
 
 export default function AssessmentLandingPage() {
@@ -20,14 +20,18 @@ export default function AssessmentLandingPage() {
         {/* Simple Header */}
         <div className="flex flex-col items-center justify-center text-center mb-8 sm:mb-12">
            <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-4" style={{ background: 'var(--gradient-primary)' }}>
-              <Activity className="w-6 h-6 text-white" />
+              <Sparkles className="w-6 h-6 text-white" />
            </div>
            <h1 className="text-3xl md:text-5xl font-bold tracking-tight text-[var(--text-primary)] mb-3">
-             <span className="gradient-text">Lifestyle Health</span> Screening
+             <span className="gradient-text">Check Your</span> Score
            </h1>
            <p className="text-base sm:text-lg text-[var(--text-secondary)] max-w-lg mx-auto">
-             Answer a few simple questions to generate your personalized health risk dashboard in seconds.
+             Choose a focused questionnaire for Cortisol or Diabetes and get a targeted score based on the risk drivers that matter most.
            </p>
+           <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-full border border-[var(--border-color)] bg-[var(--bg-card)] text-xs font-bold uppercase tracking-[0.18em] text-[var(--text-secondary)]">
+             <Activity className="w-3.5 h-3.5 text-[var(--accent-purple)]" />
+             Questionnaire-Based Screening
+           </div>
         </div>
 
         {/* The interactive Questionnaire component */}

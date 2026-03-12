@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
-import { calculateAssessmentScores, type AssessmentAnswers } from '@/lib/assessment-scoring';
+import { calculateLifestyleAssessmentScores } from '@/lib/lifestyle-assessment-scoring';
 
 function encodeFallbackPayload(computed_scores: unknown) {
   return Buffer.from(JSON.stringify({ computed_scores }), 'utf8').toString('base64url');
@@ -10,14 +10,11 @@ export async function POST(req: Request) {
   try {
     const { answers } = await req.json();
 
-    if (!answers || !answers.scoreType || !answers.responses) {
+    if (!answers) {
       return NextResponse.json({ error: 'Answers are required' }, { status: 400 });
     }
 
-    const assessmentAnswers = answers as AssessmentAnswers;
-
-    // Compute server-side scores securely
-    const computed_scores = calculateAssessmentScores(assessmentAnswers);
+    const computed_scores = calculateLifestyleAssessmentScores(answers);
     const fallback_payload = encodeFallbackPayload(computed_scores);
 
     let supabase;
@@ -31,19 +28,19 @@ export async function POST(req: Request) {
       });
     }
 
-    // Get current user if available to link session
-    const { data: { session } } = await supabase.auth.getSession();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
     const user_id = session?.user?.id || null;
 
-    // Insert into the new lead-gen table
     const { data, error } = await supabase
       .from('assessment_sessions')
       .insert([
-        { 
+        {
           user_id,
-          answers: assessmentAnswers,
-          computed_scores
-        }
+          answers,
+          computed_scores,
+        },
       ])
       .select('id')
       .single();
@@ -57,12 +54,14 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ session_id: data.id, fallback_payload });
-    
   } catch (error) {
     console.error('Assessment Submission Error:', error);
-    return NextResponse.json({ 
-      success: false, 
-      error: 'An internal error occurred' 
-    }, { status: 500 });
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'An internal error occurred',
+      },
+      { status: 500 }
+    );
   }
 }

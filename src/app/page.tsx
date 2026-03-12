@@ -37,11 +37,14 @@ export default function Home() {
               Analyze Your Report
               <ArrowRight className="w-4 h-4" />
             </a>
+            <a href="/lifestyle-assessment" className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] font-semibold text-sm hover:border-[var(--accent-purple)] transition-all">
+              Don&apos;t Have Your Report?
+            </a>
             <a href="/assessment" className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] font-semibold text-sm hover:border-[var(--accent-purple)] transition-all">
-              Don't have your report?
+              Check Your Score
             </a>
             <a href="#how-it-works" className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg border border-[var(--border-color)] text-[var(--text-secondary)] font-semibold text-sm hover:border-[var(--border-light)] hover:bg-[var(--bg-card)] transition-all">
-              See How It Works
+              How It Works
             </a>
           </div>
         </div>
